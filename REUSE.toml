@@ -8,3 +8,9 @@ path = [
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 The Gatepost authors"
 SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "assets/*.png"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 The Gatepost authors"
+SPDX-License-Identifier = "Apache-2.0"
