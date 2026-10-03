@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 The Gatepost authors
+# SPDX-License-Identifier: Apache-2.0
+includes:
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon
+
+parameters:
+    level: 8
+    # The plugin supports PHP 8.1 and every later release.
+    phpVersion:
+        min: 80100
+        max: 80599
+    paths:
+        - gatepost-postcode-for-woocommerce.php
+        - uninstall.php
+        - src
+        - scripts/check-coverage.php
+        - scripts/check-licences.php
+    bootstrapFiles:
+        - vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
+        - vendor/php-stubs/woocommerce-stubs/woocommerce-packages-stubs.php
+        - vendor-prefixed/autoload.php
+    tmpDir: build/phpstan

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 The Gatepost authors
+# SPDX-License-Identifier: Apache-2.0
+# Checks one commit message: a Conventional Commits subject with a scope (GIT-1), a sign-off
+# (GIT-2), no co-author line for an AI tool (GIT-3), then the agent tells that check-tells
+# finds (TELL-14, TELL-18). The commit-msg hook and CI run it.
+set -euo pipefail
+
+types='build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test'
+scopes='plugin|repo|deps|release'
+subject="$(sed -n '/^[^#[:space:]]/{p;q;}' "$1")"
+if ! printf '%s\n' "$subject" | grep -Eq "^(${types})\((${scopes})\)!?: [^ ]"; then
+  echo "Write the subject as type(scope): summary, for example fix(plugin): keep the order." >&2
+  echo "Types: ${types}. Scopes: ${scopes}." >&2
+  exit 1
+fi
+if ! grep -Eiq '^signed-off-by: .+ <.+>' "$1"; then
+  echo "Add a Signed-off-by line with a name and an email address. Use git commit -s (GIT-2)." >&2
+  exit 1
+fi
+# A person can be named Claude or Copilot, so the check reads the address of the trailer. It
+# refuses each address at the domain of an AI company, and each address that an AI tool writes
+# elsewhere. To refuse a new tool, add its address here and a row to CheckCommitMsgTest.
+ai_addresses='[^ <>@]+@(anthropic|openai)\.com|noreply@aider\.chat|cursoragent@cursor\.com'
+ai_addresses="${ai_addresses}|copilot@github\.com|claude-code@users\.noreply\.github\.com"
+ai_addresses="${ai_addresses}|gemini-code-assist@google\.com"
+ai_addresses="${ai_addresses}|[0-9]+\+copilot@users\.noreply\.github\.com"
+if grep -Eiq "^co-authored-by:.*[ <](${ai_addresses})([> ]|\$)" "$1"; then
+  echo "Remove the Co-Authored-By line for an AI tool (GIT-3)." >&2
+  exit 1
+fi
+python3 spec/scripts/check-tells --commit-msg "$1"

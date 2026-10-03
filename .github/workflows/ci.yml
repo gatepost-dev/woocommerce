@@ -1,0 +1,98 @@
+# SPDX-FileCopyrightText: 2026 The Gatepost authors
+# SPDX-License-Identifier: Apache-2.0
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # Each download has a SHA-256 sum. Renovate moves only the version, so a new version fails
+      # the sum check until a person writes the new sum.
+      # renovate: depName=miniscruff/changie
+      CHANGIE_VERSION: 1.26.0
+      CHANGIE_SHA256: eab168c8287a6e91912e1c02e5260911232d945bfd3c89d8a0e1ace6bb7b6161
+      # renovate: depName=gitleaks/gitleaks
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # gitleaks reads the whole history.
+          fetch-depth: 0
+          submodules: true
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.4'
+          coverage: xdebug
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+      - name: Install changie and gitleaks
+        working-directory: ${{ runner.temp }}
+        run: |
+          changie_archive="changie_${CHANGIE_VERSION}_linux_amd64.tar.gz"
+          gitleaks_archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfLO "https://github.com/miniscruff/changie/releases/download/v${CHANGIE_VERSION}/${changie_archive}"
+          curl -sSfLO "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${gitleaks_archive}"
+          echo "$CHANGIE_SHA256  $changie_archive" | sha256sum -c -
+          echo "$GITLEAKS_SHA256  $gitleaks_archive" | sha256sum -c -
+          mkdir bin
+          tar -xzf "$changie_archive" -C bin changie
+          tar -xzf "$gitleaks_archive" -C bin gitleaks
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: composer install --no-interaction --no-progress
+      - run: composer check
+
+  # The floors of ADR 0002 and the newest releases, on SQLite. One more run uses the MySQL server
+  # of the runner, as most stores do. None of them needs Docker.
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { php: '8.1', wp: 6.7.9, wc: 10.0.4, wp-tests: '6.7.*', db: sqlite }
+          - { php: '8.5', wp: 7.1.2, wc: 11.1.2, wp-tests: '7.1.*', db: sqlite }
+          - { php: '8.4', wp: 7.1.2, wc: 11.1.2, wp-tests: '7.1.*', db: mysql }
+    env:
+      GATEPOST_WP_VERSION: ${{ matrix.wp }}
+      GATEPOST_WC_VERSION: ${{ matrix.wc }}
+      GATEPOST_DB: ${{ matrix.db }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      # Each version of WordPress's test library expects its own WordPress.
+      - name: Use the test library of this WordPress
+        env:
+          WP_TESTS: ${{ matrix.wp-tests }}
+        run: |
+          composer require --dev --no-interaction --no-progress -W \
+            "wp-phpunit/wp-phpunit:$WP_TESTS"
+      - name: Start MySQL
+        if: matrix.db == 'mysql'
+        run: |
+          sudo systemctl start mysql.service
+          mysql -uroot -proot -e 'CREATE DATABASE wordpress_tests'
+      - run: scripts/install-wp
+      - run: composer test
