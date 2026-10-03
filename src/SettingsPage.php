@@ -27,6 +27,13 @@ final class SettingsPage {
 	private static bool $remove_requested = false;
 
 	/**
+	 * True after the person types a new valid key in the same save. The new key wins over the box.
+	 *
+	 * @var bool
+	 */
+	private static bool $key_typed = false;
+
+	/**
 	 * Adds the section and its fields to WooCommerce's settings.
 	 */
 	public static function register(): void {
@@ -73,7 +80,7 @@ final class SettingsPage {
 		if ( self::SECTION !== $section ) {
 			return $settings;
 		}
-		return array(
+		$fields = array(
 			array(
 				'id'    => 'gatepost_wc_options',
 				'type'  => 'title',
@@ -90,15 +97,6 @@ final class SettingsPage {
 				),
 				'default'  => '',
 				'autoload' => false,
-			),
-			array(
-				'id'    => self::REMOVE,
-				'type'  => 'checkbox',
-				'title' => __( 'Remove the key', 'gatepost-postcode-for-woocommerce' ),
-				'desc'  => __(
-					'Remove the saved key when you save these settings.',
-					'gatepost-postcode-for-woocommerce'
-				),
 			),
 			array(
 				'id'      => Settings::REQUIRED,
@@ -139,6 +137,28 @@ final class SettingsPage {
 			array(
 				'id'   => 'gatepost_wc_options',
 				'type' => 'sectionend',
+			),
+		);
+		if ( '' !== (string) get_option( Settings::SECRET_KEY, '' ) ) {
+			// The box has no use when no key is saved.
+			array_splice( $fields, 2, 0, array( self::remove_field() ) );
+		}
+		return $fields;
+	}
+
+	/**
+	 * Gives the box that removes the saved key.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private static function remove_field(): array {
+		return array(
+			'id'    => self::REMOVE,
+			'type'  => 'checkbox',
+			'title' => __( 'Remove the key', 'gatepost-postcode-for-woocommerce' ),
+			'desc'  => __(
+				'Remove the saved key when you save these settings.',
+				'gatepost-postcode-for-woocommerce'
 			),
 		);
 	}
@@ -183,6 +203,7 @@ final class SettingsPage {
 			return (string) get_option( Settings::SECRET_KEY, '' );
 		}
 		if ( 1 === preg_match( '/\Anipost_live_[A-Za-z0-9_]+\z/', $key ) ) {
+			self::$key_typed = true;
 			return $key;
 		}
 		WC_Admin_Settings::add_error(
@@ -206,14 +227,16 @@ final class SettingsPage {
 	}
 
 	/**
-	 * Removes the saved key when the person asked for it. It runs after WooCommerce saves the
-	 * fields, because WooCommerce saves every field in one step at the end.
+	 * Removes the saved key when the person asked for it, unless the person typed a new key in the
+	 * same save. It runs after WooCommerce saves the fields, because WooCommerce saves every field
+	 * in one step at the end.
 	 */
 	public static function remove_key(): void {
-		if ( self::$remove_requested ) {
+		if ( self::$remove_requested && ! self::$key_typed ) {
 			delete_option( Settings::SECRET_KEY );
 		}
 		self::$remove_requested = false;
+		self::$key_typed        = false;
 	}
 
 	/**
@@ -227,13 +250,11 @@ final class SettingsPage {
 		$title = (string) ( $field['title'] ?? '' );
 		$desc  = (string) ( $field['desc'] ?? '' );
 		$saved = '' !== (string) get_option( Settings::SECRET_KEY, '' );
-		$note  = $saved ? implode(
-			' ',
-			array(
-				__( 'A key is saved.', 'gatepost-postcode-for-woocommerce' ),
-				__( 'Type a new key to replace it.', 'gatepost-postcode-for-woocommerce' ),
-			)
+		$note  = $saved ? __(
+			'A key is saved. Type a new key to replace it.',
+			'gatepost-postcode-for-woocommerce'
 		) : '';
+		$help  = $id . '-description';
 		?>
 		<tr>
 			<th scope="row" class="titledesc">
@@ -248,9 +269,10 @@ final class SettingsPage {
 					type="password"
 					value=""
 					autocomplete="new-password"
+					aria-describedby="<?php echo esc_attr( $help ); ?>"
 					class="regular-text"
 				/>
-				<p class="description">
+				<p class="description" id="<?php echo esc_attr( $help ); ?>">
 					<?php echo esc_html( $desc ); ?>
 					<?php echo esc_html( $note ); ?>
 				</p>

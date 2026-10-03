@@ -13,6 +13,7 @@ use Gatepost\WooCommerce\Settings;
 use Gatepost\WooCommerce\SettingsPage;
 use WC_Admin_Settings;
 use WP_UnitTestCase;
+use WPDieException;
 
 /**
  * The section WooCommerce > Settings > Advanced > Nigerian postcodes.
@@ -107,6 +108,79 @@ final class SettingsPageTest extends WP_UnitTestCase {
 		do_action( 'woocommerce_update_options_advanced_' . SettingsPage::SECTION );
 		$this->assertSame( '', get_option( Settings::SECRET_KEY, '' ) );
 		$this->assertSame( 'unset', get_option( SettingsPage::REMOVE, 'unset' ) );
+	}
+
+	public function tear_down(): void {
+		// Clears the flags, so a failed test cannot leak them into the next one.
+		SettingsPage::remove_key();
+		parent::tear_down();
+	}
+
+	public function test_a_new_valid_key_replaces_the_saved_key(): void {
+		update_option( Settings::SECRET_KEY, 'nipost_live_old' );
+		Plugin::boot();
+		$fields = SettingsPage::add_fields( array(), SettingsPage::SECTION );
+		WC_Admin_Settings::save_fields(
+			$fields,
+			array( Settings::SECRET_KEY => 'nipost_live_new' )
+		);
+		do_action( 'woocommerce_update_options_advanced_' . SettingsPage::SECTION );
+		$this->assertSame( 'nipost_live_new', get_option( Settings::SECRET_KEY ) );
+	}
+
+	public function test_a_new_key_wins_over_a_ticked_box_in_the_same_save(): void {
+		update_option( Settings::SECRET_KEY, 'nipost_live_old' );
+		Plugin::boot();
+		$fields = SettingsPage::add_fields( array(), SettingsPage::SECTION );
+		WC_Admin_Settings::save_fields(
+			$fields,
+			array(
+				Settings::SECRET_KEY => 'nipost_live_new',
+				SettingsPage::REMOVE => 'yes',
+			)
+		);
+		do_action( 'woocommerce_update_options_advanced_' . SettingsPage::SECTION );
+		$this->assertSame( 'nipost_live_new', get_option( Settings::SECRET_KEY ) );
+	}
+
+	public function test_the_remove_box_shows_only_when_a_key_is_saved(): void {
+		$ids = array_column( SettingsPage::add_fields( array(), SettingsPage::SECTION ), 'id' );
+		$this->assertNotContains( SettingsPage::REMOVE, $ids );
+		update_option( Settings::SECRET_KEY, 'nipost_live_saved' );
+		$ids = array_column( SettingsPage::add_fields( array(), SettingsPage::SECTION ), 'id' );
+		$this->assertContains( SettingsPage::REMOVE, $ids );
+	}
+
+	public function test_the_page_output_has_the_key_field_and_never_the_saved_key(): void {
+		update_option( Settings::SECRET_KEY, 'nipost_live_hidden_value' );
+		Plugin::boot();
+		ob_start();
+		WC_Admin_Settings::output_fields(
+			SettingsPage::add_fields( array(), SettingsPage::SECTION )
+		);
+		$html = (string) ob_get_clean();
+		$this->assertStringNotContainsString( 'hidden_value', $html );
+		$this->assertStringContainsString( 'type="password"', $html );
+		$this->assertStringContainsString( 'name="' . Settings::SECRET_KEY . '"', $html );
+		$this->assertStringContainsString(
+			'aria-describedby="' . Settings::SECRET_KEY . '-description"',
+			$html
+		);
+		$this->assertStringContainsString( 'id="' . Settings::SECRET_KEY . '-description"', $html );
+	}
+
+	public function test_a_person_without_the_capability_cannot_save(): void {
+		update_option( Settings::SECRET_KEY, 'nipost_live_saved' );
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'subscriber' ) ) );
+		$_POST[ Settings::SECRET_KEY ] = 'nipost_live_attack';
+		try {
+			WC_Admin_Settings::save();
+			$this->fail( 'The save should stop.' );
+		} catch ( WPDieException $stop ) {
+			$this->assertSame( 'nipost_live_saved', get_option( Settings::SECRET_KEY ) );
+		} finally {
+			unset( $_POST[ Settings::SECRET_KEY ] );
+		}
 	}
 
 	public function test_an_unticked_box_keeps_the_saved_key(): void {
