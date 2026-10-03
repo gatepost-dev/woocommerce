@@ -32,3 +32,5 @@ add_action(
 		$features::declare_compatibility( 'cart_checkout_blocks', __FILE__ );
 	}
 );
+
+add_action( 'woocommerce_loaded', array( Gatepost\WooCommerce\Plugin::class, 'boot' ) );

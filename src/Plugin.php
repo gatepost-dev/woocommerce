@@ -23,6 +23,13 @@ final class Plugin {
 	const LOOKUP_TIMEOUT_MS = 3000;
 
 	/**
+	 * Adds every hook.
+	 */
+	public static function boot(): void {
+		SettingsPage::register();
+	}
+
+	/**
 	 * Builds a checker from the store's current settings. It sends nothing until an order needs
 	 * a lookup.
 	 */
