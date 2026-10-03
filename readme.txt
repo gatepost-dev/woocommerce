@@ -44,6 +44,10 @@ Not for the format check. Without a key, the plugin checks the format of each po
 
 The plugin still places the order. It waits at most 3 seconds for each postcode, marks the order "Check failed" and leaves an order note that says why.
 
+= Does the plugin work with the export and erase tools of WordPress? =
+
+Yes. The postcodes of an order and of a customer's saved address appear in the personal data export. The erase request removes them, and keeps the check status, which is not personal data. The plugin also adds a suggested text to the privacy policy page of your store.
+
 = Can I use a test key? =
 
 No. NIPOST's test keys work only on its staging service, which this plugin does not use. Use a live secret key.

@@ -9,6 +9,7 @@
 namespace Gatepost\WooCommerce;
 
 use Throwable;
+use WC_Customer;
 use WC_Order;
 use WP_Error;
 
@@ -29,6 +30,12 @@ final class ClassicCheckout {
 			2
 		);
 		add_action( 'woocommerce_checkout_order_created', array( self::class, 'record' ) );
+		add_action(
+			'woocommerce_after_save_address_validation',
+			array( self::class, 'validate_saved_address' ),
+			10,
+			4
+		);
 	}
 
 	/**
@@ -88,6 +95,45 @@ final class ClassicCheckout {
 		return 'billing' === $group
 			? __( 'Billing postcode is required.', 'gatepost-postcode-for-woocommerce' )
 			: __( 'Shipping postcode is required.', 'gatepost-postcode-for-woocommerce' );
+	}
+
+	/**
+	 * Checks the format of a postcode that a customer saves in the address book of the account.
+	 * The form of My Account has no other check, and the same field is read again at checkout.
+	 *
+	 * @param mixed $user_id  The user id. Unused.
+	 * @param mixed $type     The address: billing or shipping.
+	 * @param mixed $address  The address fields. Unused.
+	 * @param mixed $customer The customer, with the new values set but not saved.
+	 */
+	public static function validate_saved_address(
+		$user_id,
+		$type,
+		$address,
+		$customer = null
+	): void {
+		unset( $user_id, $address );
+		$known = in_array( $type, OrderPostcodes::GROUPS, true );
+		if ( ! $customer instanceof WC_Customer || ! $known ) {
+			return;
+		}
+		try {
+			$country = 'billing' === $type
+				? $customer->get_billing_country()
+				: $customer->get_shipping_country();
+			$typed   = (string) $customer->get_meta( $type . '_' . AddressLocale::FIELD );
+			$checker = new Checker( Settings::accepts_legacy() );
+			$problem = 'NG' === $country ? $checker->format_problem( $typed ) : null;
+		} catch ( Throwable $failure ) {
+			OrderPostcodes::warn_of(
+				'The plugin could not check the format of a postcode.',
+				$failure
+			);
+			return;
+		}
+		if ( null !== $problem ) {
+			wc_add_notice( $problem, 'error' );
+		}
 	}
 
 	/**

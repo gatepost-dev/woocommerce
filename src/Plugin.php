@@ -37,6 +37,7 @@ final class Plugin {
 		ClassicCheckout::register();
 		BlockCheckout::register();
 		OrdersList::register();
+		Privacy::register();
 		SettingsPage::register();
 	}
 

@@ -14,6 +14,7 @@ use Gatepost\WooCommerce\Tests\Support\CapturedLog;
 use Gatepost\WooCommerce\Tests\Support\FakeGateway;
 use Gatepost\WooCommerce\Tests\Support\Shop;
 use RuntimeException;
+use WC_Customer;
 use WC_Order;
 use WP_Error;
 use WP_UnitTestCase;
@@ -460,5 +461,36 @@ final class ClassicCheckoutTest extends WP_UnitTestCase {
 			),
 			self::errors_of( $form )
 		);
+	}
+
+	/**
+	 * Runs the check that WooCommerce allows when a customer saves an address of the account.
+	 *
+	 * @param string $country  The country of the address.
+	 * @param string $postcode The text of the postcode field.
+	 * @return array<int, string> The error notices.
+	 */
+	private static function saved_address_errors( string $country, string $postcode ): array {
+		wc_clear_notices();
+		$customer = new WC_Customer( 0 );
+		$customer->set_billing_country( $country );
+		$customer->update_meta_data( 'billing_gatepost_postcode', $postcode );
+		do_action( 'woocommerce_after_save_address_validation', 1, 'billing', array(), $customer );
+		$notices = array();
+		foreach ( wc_get_notices( 'error' ) as $notice ) {
+			$notices[] = (string) $notice['notice'];
+		}
+		wc_clear_notices();
+		return $notices;
+	}
+
+	public function test_checks_the_format_of_a_postcode_saved_in_the_account(): void {
+		$this->assertSame(
+			array( 'Part of the postcode is not valid. Did you mean EK-01-A03-FK-01?' ),
+			self::saved_address_errors( 'NG', 'EKO1A03FK01' )
+		);
+		$this->assertSame( array(), self::saved_address_errors( 'NG', 'FC-01-Z99-ZZ-01' ) );
+		$this->assertSame( array(), self::saved_address_errors( 'NG', '' ) );
+		$this->assertSame( array(), self::saved_address_errors( 'GB', 'not a postcode!' ) );
 	}
 }
