@@ -80,6 +80,7 @@
             "@phpstan",
             "@test:setup",
             "@test:coverage",
+            "@test:multisite",
             "@changes:check",
             "@namespaces",
             "@licences",
@@ -108,6 +109,10 @@
             "phpunit --coverage-cobertura build/coverage/cobertura.xml",
             "@php scripts/check-coverage.php build/coverage/cobertura.xml"
         ],
+        "test:multisite": [
+            "@putenv WP_MULTISITE=1",
+            "phpunit --group ms-required"
+        ],
         "test:setup": "scripts/install-wp",
         "workflows:check": "uvx zizmor@1.30.1 --offline .github/workflows"
     },
@@ -126,6 +131,7 @@
         "tells": "Check for agent tells.",
         "test": "Run the PHPUnit tests on the WordPress in build/wp.",
         "test:coverage": "Run the tests with line coverage. They need Xdebug.",
+        "test:multisite": "Run the tests that need a network of sites.",
         "test:setup": "Install WordPress and WooCommerce in build/ for the tests.",
         "workflows:check": "Check the workflows with zizmor."
     }
