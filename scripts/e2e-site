@@ -4,6 +4,8 @@
 # Builds the shop that the browser tests use, in build/e2e: a copy of the WordPress in build/wp,
 # so the must-use plugin that fakes NIPOST's gateway never reaches the PHPUnit tests. The shop
 # runs the zip that scripts/build-zip makes, as a store would. Run scripts/install-wp first.
+# With GATEPOST_USE_BUILT_ZIP set, the script keeps the zip that is in dist/ and builds none, so a
+# release tests the very file that it attaches.
 # Each run starts from a new copy and an empty database.
 set -euo pipefail
 
@@ -31,7 +33,14 @@ wp core install --url=http://127.0.0.1:8890 --title=Shop --admin_user=admin \
 wp option update home http://127.0.0.1:8890
 wp option update siteurl http://127.0.0.1:8890
 
-"$root/scripts/build-zip"
+if [ -n "${GATEPOST_USE_BUILT_ZIP:-}" ]; then
+  if [ ! -f "$root/dist/gatepost-postcode-for-woocommerce.zip" ]; then
+    echo "dist/gatepost-postcode-for-woocommerce.zip is missing. Run scripts/build-zip first." >&2
+    exit 1
+  fi
+else
+  "$root/scripts/build-zip"
+fi
 wp plugin install "$root/dist/gatepost-postcode-for-woocommerce.zip"
 wp plugin activate woocommerce gatepost-postcode-for-woocommerce
 # The option gatepost_e2e_gateway picks how the fake answers each request to the gateway.
