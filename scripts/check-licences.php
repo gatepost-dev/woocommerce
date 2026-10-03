@@ -73,15 +73,28 @@ function gatepost_composer_packages( string $lock_file ): array {
  * @return array<int, array{name: string, licences: array<int, string>, shipped: bool}>
  */
 function gatepost_npm_packages( string $report_file ): array {
+	$raw    = is_file( $report_file ) ? (string) file_get_contents( $report_file ) : '';
+	$report = json_decode( $raw, true );
+	// An object decodes to an array too, but a list decodes to one with integer keys.
+	if ( ! is_array( $report ) || ( array() !== $report && array_is_list( $report ) ) ) {
+		fwrite( STDERR, "Cannot use the pnpm licence report {$report_file}. Run pnpm install.\n" );
+		exit( 2 );
+	}
 	$packages = array();
-	foreach ( gatepost_read_json( $report_file ) as $licence => $group ) {
+	foreach ( $report as $licence => $group ) {
+		// A package under "(MIT OR Apache-2.0)" has either licence.
+		$alternatives = preg_split( '/\s+OR\s+/', trim( (string) $licence, '() ' ) );
 		foreach ( (array) $group as $package ) {
 			$packages[] = array(
 				'name'     => (string) $package['name'],
-				'licences' => array( (string) $licence ),
+				'licences' => false === $alternatives ? array( (string) $licence ) : $alternatives,
 				'shipped'  => false,
 			);
 		}
+	}
+	if ( array() === $packages ) {
+		fwrite( STDERR, "The pnpm licence report {$report_file} lists no package.\n" );
+		exit( 2 );
 	}
 	return $packages;
 }
@@ -101,10 +114,9 @@ function gatepost_is_allowed( array $package ): bool {
 
 $gatepost_lock     = $argv[1] ?? dirname( __DIR__ ) . '/composer.lock';
 $gatepost_notice   = (string) file_get_contents( $argv[2] ?? dirname( __DIR__ ) . '/NOTICE' );
-$gatepost_packages = gatepost_composer_packages( $gatepost_lock );
-if ( isset( $argv[3] ) ) {
-	$gatepost_packages = array_merge( $gatepost_packages, gatepost_npm_packages( $argv[3] ) );
-}
+$gatepost_composer = gatepost_composer_packages( $gatepost_lock );
+$gatepost_npm      = isset( $argv[3] ) ? gatepost_npm_packages( $argv[3] ) : array();
+$gatepost_packages = array_merge( $gatepost_composer, $gatepost_npm );
 $gatepost_failures = array();
 foreach ( $gatepost_packages as $gatepost_package ) {
 	if ( ! gatepost_is_allowed( $gatepost_package ) ) {
@@ -121,4 +133,8 @@ if ( array() !== $gatepost_failures ) {
 	fwrite( STDERR, implode( "\n", $gatepost_failures ) . "\n" );
 	exit( 1 );
 }
-printf( "%d packages, each with an allowed licence.\n", count( $gatepost_packages ) );
+printf(
+	"%d Composer packages and %d npm packages, each with an allowed licence.\n",
+	count( $gatepost_composer ),
+	count( $gatepost_npm )
+);

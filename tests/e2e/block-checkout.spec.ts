@@ -4,9 +4,13 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, type Page } from '@playwright/test';
 import {
   fillBook,
+  logIn,
+  orderAddressPostcode,
   orderIdAfterPlacing,
   orderMeta,
+  orderNotes,
   test,
+  useOrderTables,
   useCheckout,
   useSettings,
 } from './shop';
@@ -44,6 +48,7 @@ test('saves a checked postcode in canonical form', async ({ page }) => {
   const orderId = await orderIdAfterPlacing(page);
   expect(orderMeta(orderId, '_gatepost_shipping_postcode')).toBe('FC-01-Z99-ZZ-01');
   expect(orderMeta(orderId, '_gatepost_postcode_check')).toBe('valid');
+  expect(orderAddressPostcode(orderId, 'shipping')).toBe('FC-01-Z99-ZZ-01');
 });
 
 test('names the problem and offers a corrected postcode', async ({ page }) => {
@@ -52,6 +57,7 @@ test('names the problem and offers a corrected postcode', async ({ page }) => {
   await expect(
     page.getByText('Part of the postcode is not valid. Did you mean FC-01-Z99-ZZ-01?').first(),
   ).toBeVisible();
+  await expect(page).not.toHaveURL(/order-received/);
 });
 
 test('places the order when the gateway does not answer', async ({ page }) => {
@@ -60,6 +66,27 @@ test('places the order when the gateway does not answer', async ({ page }) => {
   await page.getByRole('button', { name: 'Place Order' }).click();
   const orderId = await orderIdAfterPlacing(page);
   expect(orderMeta(orderId, '_gatepost_postcode_check')).toBe('error');
+  expect(orderMeta(orderId, '_gatepost_shipping_postcode')).toBe('FC-01-Z99-ZZ-01');
+  expect(orderNotes(orderId)).toContain('was not checked');
+});
+
+test('accepts an old postcode by default and does not look it up', async ({ page }) => {
+  await fillAddress(page, '900108');
+  await page.getByRole('button', { name: 'Place Order' }).click();
+  const orderId = await orderIdAfterPlacing(page);
+  expect(orderMeta(orderId, '_gatepost_shipping_postcode')).toBe('900108');
+  expect(orderMeta(orderId, '_gatepost_postcode_check')).toBe('unchecked');
+});
+
+test('lists the postcode of a block order in the orders list', async ({ page }) => {
+  useOrderTables(true);
+  await fillAddress(page, 'FC-01-Z99-ZZ-01');
+  await page.getByRole('button', { name: 'Place Order' }).click();
+  const orderId = await orderIdAfterPlacing(page);
+  await logIn(page);
+  await page.goto('/wp-admin/admin.php?page=wc-orders');
+  const cell = page.locator(`tr#order-${orderId} td.column-gatepost_postcode`);
+  await expect(cell).toHaveText('FC-01-Z99-ZZ-01Checked');
 });
 
 test('asks for the new postcode when the store rejects old ones', async ({ page }) => {
@@ -67,6 +94,7 @@ test('asks for the new postcode when the store rejects old ones', async ({ page 
   await fillAddress(page, '900108');
   await page.getByRole('button', { name: 'Place Order' }).click();
   await expect(page.getByText('This is an old 6-digit postcode.').first()).toBeVisible();
+  await expect(page).not.toHaveURL(/order-received/);
 });
 
 test('reaches the field by keyboard and passes an accessibility check', async ({ page }) => {

@@ -1,28 +1,36 @@
 // SPDX-FileCopyrightText: 2026 The Gatepost authors
 // SPDX-License-Identifier: Apache-2.0
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { wp } from './shop';
 
 const zip = 'dist/gatepost-postcode-for-woocommerce.zip';
 const installed = 'build/e2e/wp-content/plugins/gatepost-postcode-for-woocommerce';
 
-test('the zip holds the plugin and the prefixed SDK, and no dev file', () => {
-  const entries = execFileSync('unzip', ['-Z1', zip], { encoding: 'utf8' }).split('\n');
-  const top = new Set(
-    entries.map((entry) => entry.split('/').slice(1, 2).join('')).filter((name) => name !== ''),
-  );
-  expect([...top].sort()).toEqual([
-    'LICENSE',
-    'LICENSES',
-    'NOTICE',
-    'gatepost-postcode-for-woocommerce.php',
-    'readme.txt',
-    'src',
-    'uninstall.php',
-    'vendor-prefixed',
-  ]);
+// Lists the files that the zip may hold: the tracked files of the plugin, and the bundled SDK
+// that Strauss writes to vendor-prefixed/. Any other file, such as a stray backup in src/, fails.
+function expectedFiles(): string[] {
+  const tracked = execFileSync(
+    'git',
+    ['ls-files', 'gatepost-postcode-for-woocommerce.php', 'uninstall.php', 'readme.txt', 'LICENSE',
+      'NOTICE', 'LICENSES', 'src'],
+    { encoding: 'utf8' },
+  ).split('\n');
+  const bundled = readdirSync('vendor-prefixed', { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => join(entry.parentPath, entry.name));
+  return [...tracked, ...bundled].filter((name) => name !== '').sort();
+}
+
+test('the zip holds the tracked plugin files and the prefixed SDK, and nothing else', () => {
+  const entries = execFileSync('unzip', ['-Z1', zip], { encoding: 'utf8' })
+    .split('\n')
+    .filter((entry) => entry !== '' && !entry.endsWith('/'))
+    .map((entry) => entry.split('/').slice(1).join('/'))
+    .sort();
+  expect(entries).toEqual(expectedFiles());
 });
 
 test('the installed zip checks a format with the prefixed SDK alone', () => {

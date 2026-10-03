@@ -3,23 +3,15 @@
 import { expect, type Page } from '@playwright/test';
 import {
   fillBook,
+  logIn,
   orderIdAfterPlacing,
+  orderNotes,
   test,
   useCheckout,
   useOrderTables,
   useSettings,
   wp,
 } from './shop';
-
-// Logs in without the dashboard and the profile page, which ask WordPress.org for news and
-// translations.
-async function logIn(page: Page): Promise<void> {
-  await page.goto('/wp-login.php?redirect_to=%2Fwp-admin%2Fadmin.php%3Fpage%3Dwc-settings');
-  await page.locator('#user_login').fill('admin');
-  await page.locator('#user_pass').fill('admin');
-  await page.locator('#wp-submit').click();
-  await page.waitForURL(/wc-settings/);
-}
 
 async function placeClassicOrder(page: Page): Promise<string> {
   await fillBook(page, useCheckout('classic'));
@@ -61,6 +53,19 @@ test('keeps a test key out of the settings', async ({ page }) => {
   await page.getByRole('button', { name: 'Save changes' }).click();
   await expect(page.getByText('The key was not saved.')).toBeVisible();
   expect(wp('option', 'get', 'gatepost_wc_secret_key')).toBe('nipost_live_saved');
+});
+
+test('shows "Check failed" in the orders list when the gateway does not answer', async ({
+  page,
+}) => {
+  useOrderTables(true);
+  useSettings({ secretKey: 'nipost_live_example', gateway: 'no-response' });
+  const orderId = await placeClassicOrder(page);
+  await logIn(page);
+  await page.goto('/wp-admin/admin.php?page=wc-orders');
+  const cell = page.locator(`tr#order-${orderId} td.column-gatepost_postcode`);
+  await expect(cell).toHaveText('FC-01-Z99-ZZ-01Check failed');
+  expect(orderNotes(orderId)).toContain('was not checked');
 });
 
 const settingsPage = '/wp-admin/admin.php?page=wc-settings&tab=advanced&section=gatepost_postcode';

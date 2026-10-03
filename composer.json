@@ -90,6 +90,7 @@
         ],
         "context:check": "cmp CONTEXT.md spec/CONTEXT.md",
         "deps:licences": [
+            "mkdir -p build",
             "corepack pnpm licenses list --json > build/pnpm-licences.json",
             "@php scripts/check-licences.php composer.lock NOTICE build/pnpm-licences.json"
         ],

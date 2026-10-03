@@ -42,7 +42,7 @@ Not for the format check. Without a key, the plugin checks the format of each po
 
 = What happens when NIPOST's service is slow or down? =
 
-The order goes ahead. The plugin waits at most 3 seconds, marks the order "Check failed" and leaves an order note that says why.
+The plugin still places the order. It waits at most 3 seconds, marks the order "Check failed" and leaves an order note that says why.
 
 = Can I use a test key? =
 
@@ -53,7 +53,7 @@ No. NIPOST's test keys work only on its staging service, which this plugin does 
 This plugin can connect to NIPOST's postcode gateway at https://api.postcode.gov.ng. It does so only when the store owner enters a live secret key and keeps the lookup setting on.
 
 * When: once for each postcode of a new order with a Nigerian address, after the customer places the order. The two addresses of an order share one lookup when they hold the same postcode.
-* What it sends: the postcode in its standard form, and the store's secret key. It sends no name, email address or other part of the address.
+* What it sends: the postcode in its standard form, and the store's secret key. It sends no name, email address or other part of the address. It never sends an old 6-digit postcode. NIPOST also sees the IP address of the store's server with each request.
 * What it keeps: the postcode and the result of the check (valid, invalid, unchecked or error) as order meta. It keeps nothing else from the response.
 
 The Nigerian Postal Service (NIPOST) runs the gateway. Its terms of use: https://postcode.gov.ng/terms. Its acceptable use policy: https://postcode.gov.ng/acceptable-use. Its privacy policy: https://postcode.gov.ng/privacy. Read all three before you enter a key.

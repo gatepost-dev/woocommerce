@@ -49,6 +49,30 @@ export function orderMeta(orderId: string, key: string): string {
   return wp('eval', `echo wc_get_order( ${orderId} )->get_meta( '${key}' );`);
 }
 
+// Reads the native postcode of an order address: billing or shipping.
+export function orderAddressPostcode(orderId: string, group: 'billing' | 'shipping'): string {
+  return wp('eval', `echo wc_get_order( ${orderId} )->get_${group}_postcode();`);
+}
+
+// Reads the text of all notes of an order.
+export function orderNotes(orderId: string): string {
+  return wp(
+    'eval',
+    `$notes = wc_get_order_notes( array( 'order_id' => ${orderId} ) );
+    echo implode( ' | ', wp_list_pluck( $notes, 'content' ) );`,
+  );
+}
+
+// Logs in as the administrator and lands on the WooCommerce settings. It skips the dashboard
+// and the profile page, which ask WordPress.org for news and translations.
+export async function logIn(page: Page): Promise<void> {
+  await page.goto('/wp-login.php?redirect_to=%2Fwp-admin%2Fadmin.php%3Fpage%3Dwc-settings');
+  await page.locator('#user_login').fill('admin');
+  await page.locator('#user_pass').fill('admin');
+  await page.locator('#wp-submit').click();
+  await page.waitForURL(/wc-settings/);
+}
+
 export async function orderIdAfterPlacing(page: Page): Promise<string> {
   await page.waitForURL(/order-received=(\d+)/);
   const id = new URL(page.url()).searchParams.get('order-received');
@@ -58,6 +82,8 @@ export async function orderIdAfterPlacing(page: Page): Promise<string> {
 
 // The test of every spec. It fails a test when the shop or the browser calls a host other than
 // the shop itself, because the only call that a test may cause is the one to the fake gateway.
+// The guard sees the requests of the WordPress HTTP API and of the test's own page. It does not
+// see a second page or browser context, nor a PHP call that bypasses wp_remote_*().
 export const test = base.extend<{ noOutsideCalls: void }>({
   noOutsideCalls: [
     async ({ page }, use) => {
