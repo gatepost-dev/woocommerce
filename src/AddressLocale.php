@@ -49,7 +49,8 @@ final class AddressLocale {
 
 	/**
 	 * Hides the native postcode field for Nigeria, and shows the plugin's field. The field is
-	 * required when the store says so.
+	 * required when the store says so, but not in a Store API request: the Store API checks
+	 * every field of the locale, and the checkout block has its own field with another key.
 	 *
 	 * @param array<string, array<string, array<string, mixed>>> $locale The rules, by country code.
 	 * @return array<string, array<string, array<string, mixed>>>
@@ -58,7 +59,7 @@ final class AddressLocale {
 		$locale['NG']['postcode']['required'] = false;
 		$locale['NG']['postcode']['hidden']   = true;
 		$locale['NG'][ self::FIELD ]          = array(
-			'required' => Settings::load()->required,
+			'required' => Settings::load()->required && ! WC()->is_store_api_request(),
 			'hidden'   => false,
 		);
 		return $locale;

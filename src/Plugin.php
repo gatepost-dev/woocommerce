@@ -28,6 +28,7 @@ final class Plugin {
 	public static function boot(): void {
 		AddressLocale::register();
 		ClassicCheckout::register();
+		BlockCheckout::register();
 		SettingsPage::register();
 	}
 
