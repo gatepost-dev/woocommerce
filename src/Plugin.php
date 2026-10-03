@@ -29,6 +29,7 @@ final class Plugin {
 		AddressLocale::register();
 		ClassicCheckout::register();
 		BlockCheckout::register();
+		OrdersList::register();
 		SettingsPage::register();
 	}
 
