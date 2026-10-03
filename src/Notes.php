@@ -73,6 +73,38 @@ final class Notes {
 	}
 
 	/**
+	 * Says that the plugin itself failed during the lookup, and where to find the details.
+	 *
+	 * @param string $group    The address: billing or shipping.
+	 * @param string $redacted The redacted postcode, such as FC-01-Z99-ZZ-**.
+	 */
+	public static function not_checked_by_plugin( string $group, string $redacted ): string {
+		if ( 'billing' === $group ) {
+			/* translators: %s: a postcode with its last part hidden, such as FC-01-Z99-ZZ-**. */
+			$note = __(
+				'The billing postcode %s was not checked.',
+				'gatepost-postcode-for-woocommerce'
+			);
+		} else {
+			/* translators: %s: a postcode with its last part hidden, such as FC-01-Z99-ZZ-**. */
+			$note = __(
+				'The shipping postcode %s was not checked.',
+				'gatepost-postcode-for-woocommerce'
+			);
+		}
+		$cause   = __(
+			'The plugin had an error while it checked the postcode.',
+			'gatepost-postcode-for-woocommerce'
+		);
+		$outcome = __(
+			'The order went ahead. Check the postcode by hand.',
+			'gatepost-postcode-for-woocommerce'
+		);
+		$where   = __( 'The WooCommerce log has details.', 'gatepost-postcode-for-woocommerce' );
+		return sprintf( $note, $redacted ) . ' ' . $cause . ' ' . $outcome . ' ' . $where;
+	}
+
+	/**
 	 * Explains a failed lookup, and what the store can do about it.
 	 *
 	 * @param ErrorCode $error Why the lookup failed.
@@ -95,7 +127,15 @@ final class Notes {
 				'The gateway did not answer.',
 				'gatepost-postcode-for-woocommerce'
 			),
-			ErrorCode::ServerError, ErrorCode::UnexpectedResponse, ErrorCode::InvalidInput => __(
+			ErrorCode::ServerError => __(
+				'The gateway had an error. Try again later.',
+				'gatepost-postcode-for-woocommerce'
+			),
+			ErrorCode::InvalidInput => __(
+				'The gateway rejected the request. Update the plugin.',
+				'gatepost-postcode-for-woocommerce'
+			),
+			ErrorCode::UnexpectedResponse => __(
 				'The gateway gave an answer that the plugin cannot read.',
 				'gatepost-postcode-for-woocommerce'
 			),

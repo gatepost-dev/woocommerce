@@ -8,6 +8,7 @@
 
 namespace Gatepost\WooCommerce;
 
+use Throwable;
 use WC_Order;
 
 /**
@@ -44,8 +45,32 @@ final class OrderPostcodes {
 	 *                                     shipping.
 	 */
 	public function record( WC_Order $order, array $typed ): void {
+		try {
+			$this->store( $order, $typed );
+		} catch ( Throwable $failure ) {
+			// Nothing here may stop an order or break the thank-you page.
+			$this->log(
+				sprintf(
+					'Order %d: the plugin could not store the postcodes. It failed with %s.',
+					$order->get_id(),
+					$failure::class
+				)
+			);
+		}
+	}
+
+	/**
+	 * Checks each postcode once and writes the results.
+	 *
+	 * @param WC_Order              $order The new order.
+	 * @param array<string, string> $typed The text of each postcode field.
+	 */
+	private function store( WC_Order $order, array $typed ): void {
 		$checks = array();
 		foreach ( $typed as $group => $text ) {
+			if ( 'billing' !== $group && 'shipping' !== $group ) {
+				continue;
+			}
 			$country = 'billing' === $group
 				? $order->get_billing_country()
 				: $order->get_shipping_country();
@@ -53,12 +78,13 @@ final class OrderPostcodes {
 				continue;
 			}
 			$form  = $this->checker->stored_form( $text );
+			$fresh = ! isset( $checks[ $form ] );
 			$check = $checks[ $form ] ?? $this->checker->check( $text );
 			if ( null === $check ) {
 				continue;
 			}
 			$checks[ $form ] = $check;
-			$this->write( $order, $group, $check );
+			$this->write( $order, $group, $check, $fresh );
 		}
 		if ( array() !== $checks ) {
 			$statuses = array_map( static fn( Check $check ) => $check->status, $checks );
@@ -74,8 +100,9 @@ final class OrderPostcodes {
 	 * @param WC_Order $order The new order.
 	 * @param string   $group The address: billing or shipping.
 	 * @param Check    $check The outcome of the check.
+	 * @param bool     $fresh True for the first address of a lookup, which logs a failure.
 	 */
-	private function write( WC_Order $order, string $group, Check $check ): void {
+	private function write( WC_Order $order, string $group, Check $check, bool $fresh ): void {
 		$order->update_meta_data( self::meta_key( $group ), $check->postcode );
 		if ( 'billing' === $group ) {
 			$order->set_billing_postcode( $check->postcode );
@@ -89,18 +116,38 @@ final class OrderPostcodes {
 		if ( CheckStatus::Invalid === $check->status ) {
 			$order->add_order_note( Notes::not_found( $group, $redacted ) );
 		}
-		if ( null !== $check->error ) {
+		if ( null !== $check->local_failure ) {
+			$order->add_order_note( Notes::not_checked_by_plugin( $group, $redacted ) );
+			$cause = 'The plugin failed with ' . $check->local_failure . '.';
+		} elseif ( null !== $check->error ) {
 			$order->add_order_note( Notes::not_checked( $group, $redacted, $check->error ) );
-			wc_get_logger()->warning(
+			$cause = 'The gateway client gave ' . $check->error->value . '.';
+		} else {
+			return;
+		}
+		if ( $fresh ) {
+			$this->log(
 				sprintf(
-					'Order %d: the %s postcode %s was not checked. The gateway client gave %s.',
+					'Order %d: the %s postcode %s was not checked. %s',
 					$order->get_id(),
 					$group,
 					$redacted,
-					$check->error->value
-				),
-				array( 'source' => 'gatepost' )
+					$cause
+				)
 			);
+		}
+	}
+
+	/**
+	 * Writes one warning to the WooCommerce log. A broken log never stops the order.
+	 *
+	 * @param string $message The line. It holds no key and no full postcode.
+	 */
+	private function log( string $message ): void {
+		try {
+			wc_get_logger()->warning( $message, array( 'source' => 'gatepost' ) );
+		} catch ( Throwable ) {
+			return;
 		}
 	}
 }

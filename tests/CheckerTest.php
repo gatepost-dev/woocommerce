@@ -274,7 +274,8 @@ final class CheckerTest extends WP_UnitTestCase {
 		$client    = new PostcodeClient( $transport, $factory, apiKey: 'nipost_live_example' );
 		$check     = ( new Checker( true, $client ) )->check( 'FC-01-Z99-ZZ-01' );
 		$this->assertSame( CheckStatus::Error, $check->status );
-		$this->assertSame( ErrorCode::UnexpectedResponse, $check->error );
+		$this->assertNull( $check->error );
+		$this->assertSame( 'RuntimeException', $check->local_failure );
 		$this->assertSame( 'FC-01-Z99-ZZ-01', $check->postcode );
 	}
 }

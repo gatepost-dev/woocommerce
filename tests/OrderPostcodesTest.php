@@ -15,6 +15,12 @@ use Gatepost\WooCommerce\Plugin;
 use Gatepost\WooCommerce\Settings;
 use Gatepost\WooCommerce\Tests\Support\FakeGateway;
 use Gatepost\WooCommerce\Vendor\Gatepost\Postcode\Client\ErrorCode;
+use Gatepost\WooCommerce\Vendor\Gatepost\Postcode\Client\PostcodeClient;
+use Gatepost\WooCommerce\Vendor\Nyholm\Psr7\Factory\Psr17Factory;
+use Gatepost\WooCommerce\Vendor\Psr\Http\Client\ClientInterface;
+use Gatepost\WooCommerce\Vendor\Psr\Http\Message\RequestInterface;
+use Gatepost\WooCommerce\Vendor\Psr\Http\Message\ResponseInterface;
+use RuntimeException;
 use WC_Logger;
 use WC_Order;
 use WP_UnitTestCase;
@@ -104,8 +110,14 @@ final class OrderPostcodesTest extends WP_UnitTestCase {
 		$this->assertCount( 1, $gateway->requests );
 	}
 
-	public function test_logs_a_failed_lookup_with_the_postcode_redacted(): void {
-		$logger = new class() extends WC_Logger {
+	/**
+	 * Gives a logger that keeps its entries, and makes WooCommerce use it. A throw count above
+	 * zero makes the first calls of log() throw.
+	 *
+	 * @param int $throws How many calls of log() throw before the logger keeps entries.
+	 */
+	private function capture_log( int $throws = 0 ): WC_Logger {
+		$logger         = new class() extends WC_Logger {
 			/**
 			 * The entries, in order.
 			 *
@@ -114,13 +126,25 @@ final class OrderPostcodesTest extends WP_UnitTestCase {
 			public array $entries = array();
 
 			/**
+			 * How many calls of log() still throw.
+			 *
+			 * @var int
+			 */
+			public int $throws = 0;
+
+			/**
 			 * Keeps one entry.
 			 *
 			 * @param string               $level   The level.
 			 * @param string               $message The message.
 			 * @param array<string, mixed> $context The context.
+			 * @throws RuntimeException While the throw count is above zero.
 			 */
 			public function log( $level, $message, $context = array() ) {
+				if ( $this->throws > 0 ) {
+					--$this->throws;
+					throw new RuntimeException( 'log broke' );
+				}
 				$this->entries[] = array(
 					'level'   => $level,
 					'message' => $message,
@@ -128,7 +152,43 @@ final class OrderPostcodesTest extends WP_UnitTestCase {
 				);
 			}
 		};
+		$logger->throws = $throws;
 		add_filter( 'woocommerce_logging_class', static fn() => $logger );
+		return $logger;
+	}
+
+	/**
+	 * Gives WooCommerce its own logger back. wc_get_logger() keeps the logger in a static.
+	 */
+	public function tear_down(): void {
+		remove_all_filters( 'woocommerce_logging_class' );
+		add_filter( 'woocommerce_logging_class', static fn() => new WC_Logger() );
+		wc_get_logger();
+		parent::tear_down();
+	}
+
+	/**
+	 * Gives a recorder whose client fails with an exception from the plugin's own side.
+	 */
+	private static function breaking(): OrderPostcodes {
+		$transport = new class() implements ClientInterface {
+			/**
+			 * Fails with a message that quotes the postcode.
+			 *
+			 * @param RequestInterface $request The request.
+			 * @throws RuntimeException Always.
+			 */
+			public function sendRequest( RequestInterface $request ): ResponseInterface {
+				throw new RuntimeException( 'Broke for FC-01-Z99-ZZ-01 with nipost_live_example.' );
+			}
+		};
+		$factory   = new Psr17Factory();
+		$client    = new PostcodeClient( $transport, $factory, apiKey: 'nipost_live_example' );
+		return new OrderPostcodes( new Checker( true, $client ) );
+	}
+
+	public function test_logs_a_failed_lookup_with_the_postcode_redacted(): void {
+		$logger = $this->capture_log();
 		( new FakeGateway( 'rate-limited' ) )->start();
 		$order = self::order();
 		self::looking_up()->record( $order, array( 'billing' => 'FC-01-Z99-ZZ-01' ) );
@@ -144,6 +204,87 @@ final class OrderPostcodesTest extends WP_UnitTestCase {
 			),
 			$logger->entries
 		);
+	}
+
+	public function test_logs_one_line_when_two_addresses_share_a_failed_lookup(): void {
+		$logger = $this->capture_log();
+		( new FakeGateway( 'rate-limited' ) )->start();
+		$order = self::order();
+		self::looking_up()->record(
+			$order,
+			array(
+				'billing'  => 'FC-01-Z99-ZZ-01',
+				'shipping' => 'FC 01 Z99 ZZ 01',
+			)
+		);
+		$this->assertCount( 1, $logger->entries );
+		$this->assertCount( 2, self::notes( $order ) );
+	}
+
+	public function test_blames_the_plugin_for_a_failure_on_its_own_side(): void {
+		$logger = $this->capture_log();
+		$order  = self::order();
+		self::breaking()->record( $order, array( 'billing' => 'FC-01-Z99-ZZ-01' ) );
+		$this->assertSame( 'error', $order->get_meta( '_gatepost_postcode_check' ) );
+		$this->assertSame(
+			array( Notes::not_checked_by_plugin( 'billing', self::REDACTED ) ),
+			self::notes( $order )
+		);
+		$this->assertSame(
+			'Order ' . $order->get_id() . ': the billing postcode FC-01-Z99-ZZ-** was not checked.'
+				. ' The plugin failed with RuntimeException.',
+			$logger->entries[0]['message']
+		);
+		$line = $logger->entries[0]['message'];
+		$this->assertStringNotContainsString( 'nipost_live_example', $line );
+	}
+
+	public function test_never_throws_when_the_log_breaks(): void {
+		$this->capture_log( 1 );
+		( new FakeGateway( 'rate-limited' ) )->start();
+		$order = self::order();
+		self::looking_up()->record( $order, array( 'billing' => 'FC-01-Z99-ZZ-01' ) );
+		$this->assertSame( 'error', $order->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_reports_a_failure_while_it_writes_and_never_throws(): void {
+		$logger = $this->capture_log();
+		( new FakeGateway( 'rate-limited' ) )->start();
+		add_filter(
+			'woocommerce_new_order_note_data',
+			static function () {
+				throw new RuntimeException( 'note broke' );
+			}
+		);
+		$order = self::order();
+		self::looking_up()->record( $order, array( 'billing' => 'FC-01-Z99-ZZ-01' ) );
+		$this->assertSame(
+			array(
+				'Order ' . $order->get_id() . ': the plugin could not store the postcodes.'
+					. ' It failed with RuntimeException.',
+			),
+			wp_list_pluck( $logger->entries, 'message' )
+		);
+	}
+
+	public function test_never_throws_when_the_report_of_a_failure_breaks_too(): void {
+		$this->capture_log( 1 );
+		add_filter(
+			'woocommerce_new_order_note_data',
+			static function () {
+				throw new RuntimeException( 'note broke' );
+			}
+		);
+		( new FakeGateway( 'rate-limited' ) )->start();
+		self::looking_up()->record( self::order(), array( 'billing' => 'FC-01-Z99-ZZ-01' ) );
+		$this->addToAssertionCount( 1 );
+	}
+
+	public function test_ignores_a_group_that_is_not_billing_or_shipping(): void {
+		$order = self::order();
+		self::format_only()->record( $order, array( 'other' => 'FC-01-Z99-ZZ-01' ) );
+		$this->assertSame( '', $order->get_meta( '_gatepost_other_postcode' ) );
+		$this->assertSame( '', $order->get_meta( '_gatepost_postcode_check' ) );
 	}
 
 	public function test_stores_the_canonical_postcode_and_marks_a_known_postcode_valid(): void {

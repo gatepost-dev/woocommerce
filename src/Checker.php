@@ -98,14 +98,15 @@ final class Checker {
 		} catch ( PostcodeException $failure ) {
 			$error = $failure->errorCode();
 			return new Check( $postcode->canonical, CheckStatus::Error, $postcode, $error );
-		} catch ( Throwable ) {
-			// Any other failure still lets the order go through. The code says that the reply
-			// was not usable. The exception text stays out, because it can quote the URL.
+		} catch ( Throwable $failure ) {
+			// Any other failure still lets the order go through. Only the class of the exception
+			// is kept. Its text stays out, because it can quote the URL.
 			return new Check(
 				$postcode->canonical,
 				CheckStatus::Error,
 				$postcode,
-				ErrorCode::UnexpectedResponse
+				null,
+				$failure::class
 			);
 		}
 		$status = $found ? CheckStatus::Valid : CheckStatus::Invalid;

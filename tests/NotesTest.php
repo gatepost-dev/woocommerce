@@ -33,6 +33,16 @@ final class NotesTest extends WP_UnitTestCase {
 		);
 	}
 
+	public function test_blames_the_plugin_when_it_failed_and_points_to_the_log(): void {
+		$this->assertSame(
+			'The billing postcode FC-01-Z99-ZZ-** was not checked. '
+				. 'The plugin had an error while it checked the postcode. '
+				. 'The order went ahead. Check the postcode by hand. '
+				. 'The WooCommerce log has details.',
+			Notes::not_checked_by_plugin( 'billing', 'FC-01-Z99-ZZ-**' )
+		);
+	}
+
 	/**
 	 * Each error code has its own reason, so the store knows what to fix.
 	 *
@@ -65,9 +75,9 @@ final class NotesTest extends WP_UnitTestCase {
 			'rate limited'        => array( ErrorCode::RateLimited, 'send fewer requests' ),
 			'timeout'             => array( ErrorCode::Timeout, 'did not answer' ),
 			'network error'       => array( ErrorCode::NetworkError, 'did not answer' ),
-			'server error'        => array( ErrorCode::ServerError, $reader ),
+			'server error'        => array( ErrorCode::ServerError, 'The gateway had an error.' ),
 			'unexpected response' => array( ErrorCode::UnexpectedResponse, $reader ),
-			'invalid input'       => array( ErrorCode::InvalidInput, $reader ),
+			'invalid input'       => array( ErrorCode::InvalidInput, 'rejected the request' ),
 		);
 	}
 }
