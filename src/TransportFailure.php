@@ -26,12 +26,19 @@ final class TransportFailure extends RuntimeException implements NetworkExceptio
 	private RequestInterface $request;
 
 	/**
+	 * Only for_request() builds a failure, because a failure needs its request.
+	 */
+	private function __construct() {
+		parent::__construct( 'No response arrived from the postcode gateway.' );
+	}
+
+	/**
 	 * Builds the failure.
 	 *
 	 * @param RequestInterface $request The request that got no response.
 	 */
 	public static function for_request( RequestInterface $request ): self {
-		$failure          = new self( 'No response arrived from the postcode gateway.' );
+		$failure          = new self();
 		$failure->request = $request;
 		return $failure;
 	}

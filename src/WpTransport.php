@@ -12,6 +12,7 @@ use Gatepost\WooCommerce\Vendor\Nyholm\Psr7\Factory\Psr17Factory;
 use Gatepost\WooCommerce\Vendor\Psr\Http\Client\ClientInterface;
 use Gatepost\WooCommerce\Vendor\Psr\Http\Message\RequestInterface;
 use Gatepost\WooCommerce\Vendor\Psr\Http\Message\ResponseInterface;
+use InvalidArgumentException;
 
 /**
  * Sends the gateway client's requests with the WordPress HTTP API. The site's proxy settings and
@@ -36,12 +37,15 @@ final class WpTransport implements ClientInterface {
 	 * Sends one request.
 	 *
 	 * @param RequestInterface $request The request that the client built.
-	 * @throws TransportFailure When no response arrived.
+	 * @throws TransportFailure When no response arrived, or the response cannot be read.
 	 */
 	public function sendRequest( RequestInterface $request ): ResponseInterface {
 		$headers = array();
 		foreach ( array_keys( $request->getHeaders() ) as $name ) {
-			$headers[ $name ] = $request->getHeaderLine( $name );
+			// WordPress adds the Host header itself, and a redirect would need another value.
+			if ( 'host' !== strtolower( (string) $name ) ) {
+				$headers[ $name ] = $request->getHeaderLine( $name );
+			}
 		}
 		$reply = wp_safe_remote_request(
 			(string) $request->getUri(),
@@ -57,6 +61,22 @@ final class WpTransport implements ClientInterface {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- not output.
 			throw TransportFailure::for_request( $request );
 		}
+		try {
+			return $this->response_from( $reply );
+		} catch ( InvalidArgumentException ) {
+			// A header or a status that the PSR-7 messages refuse is a reply that cannot be read.
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- not output.
+			throw TransportFailure::for_request( $request );
+		}
+	}
+
+	/**
+	 * Builds the PSR-7 response for a WordPress reply.
+	 *
+	 * @param array<string, mixed> $reply The reply of the WordPress HTTP API.
+	 * @throws InvalidArgumentException When the status or a header breaks RFC 7230.
+	 */
+	private function response_from( array $reply ): ResponseInterface {
 		$status   = (int) wp_remote_retrieve_response_code( $reply );
 		$response = $this->factory->createResponse( $status );
 		foreach ( wp_remote_retrieve_headers( $reply ) as $name => $value ) {

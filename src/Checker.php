@@ -8,11 +8,13 @@
 
 namespace Gatepost\WooCommerce;
 
+use Gatepost\WooCommerce\Vendor\Gatepost\Postcode\Client\ErrorCode;
 use Gatepost\WooCommerce\Vendor\Gatepost\Postcode\Client\PostcodeClient;
 use Gatepost\WooCommerce\Vendor\Gatepost\Postcode\Client\PostcodeException;
 use Gatepost\WooCommerce\Vendor\Gatepost\Postcode\ParseError;
 use Gatepost\WooCommerce\Vendor\Gatepost\Postcode\ParseErrorCode;
 use Gatepost\WooCommerce\Vendor\Gatepost\Postcode\Postcode;
+use Throwable;
 
 /**
  * Checks the postcode that a customer types: its format while the customer fills in the form,
@@ -74,8 +76,8 @@ final class Checker {
 
 	/**
 	 * Checks a postcode that passed the format check. With a client, the checker asks NIPOST's
-	 * gateway whether the postcode exists. A failed lookup gives the status error, so that the
-	 * order still goes through.
+	 * gateway whether the postcode exists. A failed lookup of any kind gives the status error,
+	 * so that the order still goes through.
 	 *
 	 * @param string $typed The text in the field.
 	 * @return Check|null The outcome, or null for text that fails the format check.
@@ -96,6 +98,15 @@ final class Checker {
 		} catch ( PostcodeException $failure ) {
 			$error = $failure->errorCode();
 			return new Check( $postcode->canonical, CheckStatus::Error, $postcode, $error );
+		} catch ( Throwable ) {
+			// Any other failure still lets the order go through. The code says that the reply
+			// was not usable. The exception text stays out, because it can quote the URL.
+			return new Check(
+				$postcode->canonical,
+				CheckStatus::Error,
+				$postcode,
+				ErrorCode::UnexpectedResponse
+			);
 		}
 		$status = $found ? CheckStatus::Valid : CheckStatus::Invalid;
 		return new Check( $postcode->canonical, $status, $postcode );

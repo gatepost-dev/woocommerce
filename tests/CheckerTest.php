@@ -13,6 +13,14 @@ use Gatepost\WooCommerce\CheckStatus;
 use Gatepost\WooCommerce\Plugin;
 use Gatepost\WooCommerce\Settings;
 use Gatepost\WooCommerce\Tests\Support\FakeGateway;
+use Gatepost\WooCommerce\Vendor\Gatepost\Postcode\Client\Internal\Timer;
+use Gatepost\WooCommerce\Vendor\Gatepost\Postcode\Client\PostcodeClient;
+use Gatepost\WooCommerce\Vendor\Nyholm\Psr7\Factory\Psr17Factory;
+use Gatepost\WooCommerce\Vendor\Psr\Http\Client\ClientInterface;
+use Gatepost\WooCommerce\Vendor\Psr\Http\Message\RequestInterface;
+use Gatepost\WooCommerce\Vendor\Psr\Http\Message\ResponseInterface;
+use Gatepost\WooCommerce\WpTransport;
+use RuntimeException;
 use Gatepost\WooCommerce\Vendor\Gatepost\Postcode\Client\ErrorCode;
 use WP_UnitTestCase;
 
@@ -213,6 +221,60 @@ final class CheckerTest extends WP_UnitTestCase {
 			'no credits'  => array( 'insufficient-credits', ErrorCode::InsufficientCredits ),
 			'too many'    => array( 'rate-limited', ErrorCode::RateLimited ),
 			'scope'       => array( 'scope-not-granted', ErrorCode::Forbidden ),
+			'server down' => array( 'server-error', ErrorCode::ServerError ),
+			'unreadable'  => array( 'unreadable', ErrorCode::UnexpectedResponse ),
+			'bad header'  => array( 'bad-header', ErrorCode::NetworkError ),
 		);
+	}
+
+	public function test_marks_a_lookup_that_reaches_the_time_limit_as_a_timeout(): void {
+		$gateway = ( new FakeGateway( 'no-response' ) )->start();
+		$factory = new Psr17Factory();
+		$clock   = new class() implements Timer {
+			/**
+			 * The time in milliseconds. Each reading adds the whole limit of a lookup.
+			 *
+			 * @var float
+			 */
+			private float $now = 0.0;
+
+			public function nowMs(): float {
+				$this->now += Plugin::LOOKUP_TIMEOUT_MS;
+				return $this->now;
+			}
+
+			public function wait( int $ms ): void {
+			}
+
+			public function jitterMs( int $max_ms ): int {
+				return 0;
+			}
+		};
+		$client  = new PostcodeClient(
+			new WpTransport( Plugin::LOOKUP_TIMEOUT_MS, $factory ),
+			$factory,
+			apiKey: 'nipost_live_example',
+			timeoutMs: Plugin::LOOKUP_TIMEOUT_MS,
+			maxRetries: 0,
+			timer: $clock,
+		);
+		$check   = ( new Checker( true, $client ) )->check( 'FC-01-Z99-ZZ-01' );
+		$this->assertSame( CheckStatus::Error, $check->status );
+		$this->assertSame( ErrorCode::Timeout, $check->error );
+		$this->assertCount( 1, $gateway->requests );
+	}
+
+	public function test_marks_any_failure_of_the_client_as_an_error(): void {
+		$transport = new class() implements ClientInterface {
+			public function sendRequest( RequestInterface $request ): ResponseInterface {
+				throw new RuntimeException( 'Something broke for FC-01-Z99-ZZ-01.' );
+			}
+		};
+		$factory   = new Psr17Factory();
+		$client    = new PostcodeClient( $transport, $factory, apiKey: 'nipost_live_example' );
+		$check     = ( new Checker( true, $client ) )->check( 'FC-01-Z99-ZZ-01' );
+		$this->assertSame( CheckStatus::Error, $check->status );
+		$this->assertSame( ErrorCode::UnexpectedResponse, $check->error );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $check->postcode );
 	}
 }

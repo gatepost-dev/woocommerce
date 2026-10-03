@@ -76,6 +76,34 @@ final class WpTransportTest extends WP_UnitTestCase {
 		$this->assertSame( '{"error":{"code":"rate_limited"}}', (string) $response->getBody() );
 	}
 
+	public function test_leaves_the_host_header_to_wordpress(): void {
+		$this->send(
+			array(
+				'response' => array( 'code' => 200 ),
+				'headers'  => array(),
+				'body'     => '',
+			)
+		);
+		$this->assertArrayNotHasKey( 'Host', $this->sent['headers'] );
+		$this->assertArrayHasKey( 'X-API-Key', $this->sent['headers'] );
+	}
+
+	public function test_gives_a_failure_for_a_header_that_breaks_the_standard(): void {
+		try {
+			$this->send(
+				array(
+					'response' => array( 'code' => 200 ),
+					'headers'  => array( "bad header\n" => 'x' ),
+					'body'     => '',
+				)
+			);
+			$this->fail( 'The transport gave a response.' );
+		} catch ( TransportFailure $failure ) {
+			$message = 'No response arrived from the postcode gateway.';
+			$this->assertSame( $message, $failure->getMessage() );
+		}
+	}
+
 	public function test_keeps_the_postcode_out_of_the_message_when_no_response_arrives(): void {
 		$error = new WP_Error( 'http_request_failed', 'cURL error 28 for FC-01-Z99-ZZ-01' );
 		try {

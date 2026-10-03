@@ -30,8 +30,10 @@ final class FakeGateway {
 	 * Builds a fake. Call start() to make WordPress use it.
 	 *
 	 * @param string $answer How the fake answers: "fixtures" for the lookup fixtures, the name of
-	 *                       a file in spec/fixtures/errors such as "rate-limited", or
-	 *                       "no-response" for a network failure.
+	 *                       a file in spec/fixtures/errors such as "rate-limited",
+	 *                       "no-response" for a network failure, "server-error" for a 503,
+	 *                       "unreadable" for a 200 with a body that is not JSON, or "bad-header"
+	 *                       for a header that breaks RFC 7230.
 	 */
 	public function __construct( private readonly string $answer = 'fixtures' ) {
 	}
@@ -45,7 +47,7 @@ final class FakeGateway {
 	}
 
 	/**
-	 * Answers one request to the gateway. Requests to other hosts pass on.
+	 * Answers one request to the gateway. Requests to other hosts go to the next filter.
 	 *
 	 * @param false|array<string, mixed>|WP_Error $preempt The answer of an earlier filter.
 	 * @param array<string, mixed>                $args    The request arguments.
@@ -63,6 +65,17 @@ final class FakeGateway {
 		if ( 'no-response' === $this->answer ) {
 			return new WP_Error( 'http_request_failed', 'cURL error 7: no connection to ' . $url );
 		}
+		if ( 'server-error' === $this->answer ) {
+			return self::reply( 503, '{"error":{"code":"server_error"}}' );
+		}
+		if ( 'unreadable' === $this->answer ) {
+			return self::reply( 200, 'not json' );
+		}
+		if ( 'bad-header' === $this->answer ) {
+			$reply            = self::reply( 200, '{}' );
+			$reply['headers'] = array( "bad header\n" => 'x' );
+			return $reply;
+		}
 		$fixture = 'fixtures' === $this->answer
 			? self::lookup_fixture( $url )
 			: 'errors/' . $this->answer . '.json';
@@ -76,10 +89,33 @@ final class FakeGateway {
 	 * @param string $url The request URL.
 	 */
 	private static function lookup_fixture( string $url ): string {
+		if ( '/v1/lookup' !== wp_parse_url( $url, PHP_URL_PATH ) ) {
+			return 'errors/unknown-path.json';
+		}
 		$query = array();
 		parse_str( (string) wp_parse_url( $url, PHP_URL_QUERY ), $query );
 		$code = $query['code'] ?? '';
 		return 'FC-01-Z99-ZZ-01' === $code ? 'lookup/valid-level-1.json' : 'lookup/not-found.json';
+	}
+
+	/**
+	 * Builds a response from a status and a body.
+	 *
+	 * @param int    $status The HTTP status.
+	 * @param string $body   The body.
+	 * @return array<string, mixed>
+	 */
+	private static function reply( int $status, string $body ): array {
+		return array(
+			'headers'  => array( 'content-type' => 'application/json' ),
+			'body'     => $body,
+			'response' => array(
+				'code'    => $status,
+				'message' => '',
+			),
+			'cookies'  => array(),
+			'filename' => null,
+		);
 	}
 
 	/**

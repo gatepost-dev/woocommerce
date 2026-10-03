@@ -34,4 +34,8 @@ final class CheckStatusTest extends WP_UnitTestCase {
 			CheckStatus::for_order( array( CheckStatus::Valid, CheckStatus::Valid ) )
 		);
 	}
+
+	public function test_gives_an_order_with_no_postcode_the_status_unchecked(): void {
+		$this->assertSame( CheckStatus::Unchecked, CheckStatus::for_order( array() ) );
+	}
 }
