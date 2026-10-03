@@ -106,6 +106,20 @@ final class ClassicCheckoutTest extends WP_UnitTestCase {
 		return $order;
 	}
 
+	/**
+	 * Gives the meta keys that a saved order holds.
+	 *
+	 * @param WC_Order $order The order.
+	 * @return array<int, string>
+	 */
+	private static function meta_keys( WC_Order $order ): array {
+		$keys = array();
+		foreach ( self::reloaded( $order )->get_meta_data() as $meta ) {
+			$keys[] = (string) $meta->key;
+		}
+		return $keys;
+	}
+
 	public function test_refuses_a_postcode_with_the_wrong_format_in_a_nigerian_address(): void {
 		$this->assertSame(
 			array(
@@ -276,7 +290,9 @@ final class ClassicCheckoutTest extends WP_UnitTestCase {
 	public function test_requires_a_nigerian_postcode_when_the_store_says_so(): void {
 		update_option( Settings::REQUIRED, 'yes' );
 		$this->assertSame(
-			array( 'billing_gatepost_postcode_required' => 'Postcode is required.' ),
+			array(
+				'billing_gatepost_postcode_required' => 'Billing postcode is required.',
+			),
 			self::errors_of( self::form( array() ) )
 		);
 		$britain = self::form(
@@ -308,7 +324,9 @@ final class ClassicCheckoutTest extends WP_UnitTestCase {
 				WC()->countries->locale = null;
 				$forged                 = $forged || WC()->is_store_api_request();
 				$this->assertSame(
-					array( 'billing_gatepost_postcode_required' => 'Postcode is required.' ),
+					array(
+						'billing_gatepost_postcode_required' => 'Billing postcode is required.',
+					),
 					self::errors_of( self::form( array() ) )
 				);
 			}
@@ -328,6 +346,119 @@ final class ClassicCheckoutTest extends WP_UnitTestCase {
 		$this->assertSame(
 			array( 'WooCommerce says so.' ),
 			$errors->get_error_messages( 'billing_gatepost_postcode_required' )
+		);
+	}
+
+	public function test_leaves_no_empty_postcode_rows_on_an_order_outside_nigeria(): void {
+		$order = self::order_from(
+			self::form(
+				array(
+					'billing_country'  => 'GB',
+					'billing_state'    => '',
+					'shipping_country' => 'GB',
+				)
+			)
+		);
+		$keys  = self::meta_keys( $order );
+		$this->assertNotContains( '_billing_gatepost_postcode', $keys );
+		$this->assertNotContains( '_shipping_gatepost_postcode', $keys );
+		$this->assertNotContains( '_gatepost_billing_postcode', $keys );
+	}
+
+	public function test_leaves_no_empty_postcode_rows_when_a_nigerian_customer_types_none(): void {
+		$order = self::order_from( self::form( array() ) );
+		$keys  = self::meta_keys( $order );
+		$this->assertNotContains( '_billing_gatepost_postcode', $keys );
+		$this->assertNotContains( '_shipping_gatepost_postcode', $keys );
+		$this->assertSame( '', $order->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_drops_a_nigerian_postcode_typed_for_a_foreign_address(): void {
+		$order = self::order_from(
+			self::form(
+				array(
+					'billing_country'           => 'GB',
+					'billing_state'             => '',
+					'billing_gatepost_postcode' => 'FC-01-Z99-ZZ-01',
+					'shipping_country'          => 'GB',
+				)
+			)
+		);
+		$keys  = self::meta_keys( $order );
+		$this->assertNotContains( '_billing_gatepost_postcode', $keys );
+		$this->assertNotContains( '_gatepost_billing_postcode', $keys );
+	}
+
+	public function test_keeps_the_typed_text_that_the_plugin_did_not_store(): void {
+		$order = self::typed_order( 'EKO1A03FK01' );
+		ClassicCheckout::record( $order );
+		$this->assertContains( '_billing_gatepost_postcode', self::meta_keys( $order ) );
+	}
+
+	public function test_clears_a_stale_postcode_when_a_retry_changes_the_country(): void {
+		$order = self::typed_order( 'FC-01-Z99-ZZ-01' );
+		ClassicCheckout::record( $order );
+		$this->assertSame(
+			'FC-01-Z99-ZZ-01',
+			self::reloaded( $order )->get_meta( '_gatepost_billing_postcode' )
+		);
+		$order->set_billing_country( 'GB' );
+		$order->update_meta_data( '_billing_gatepost_postcode', 'FC-01-Z99-ZZ-01' );
+		$order->save();
+		ClassicCheckout::record( $order );
+		$keys = self::meta_keys( $order );
+		$this->assertNotContains( '_gatepost_billing_postcode', $keys );
+		$this->assertNotContains( '_billing_gatepost_postcode', $keys );
+		$this->assertNotContains( '_gatepost_postcode_check', $keys );
+	}
+
+	public function test_does_not_look_up_again_when_a_payment_retry_reuses_the_order(): void {
+		update_option( Settings::SECRET_KEY, 'nipost_live_example' );
+		$gateway = ( new FakeGateway() )->start();
+		$order   = self::typed_order( 'FC-01-Z99-ZZ-01' );
+		ClassicCheckout::record( $order );
+		// WooCommerce saves the form fields again on the reused order, native postcode empty.
+		$order->update_meta_data( '_billing_gatepost_postcode', 'FC-01-Z99-ZZ-01' );
+		$order->set_billing_postcode( '' );
+		$order->save();
+		ClassicCheckout::record( $order );
+		$saved = self::reloaded( $order );
+		$this->assertCount( 1, $gateway->requests );
+		$this->assertSame( 'valid', $saved->get_meta( '_gatepost_postcode_check' ) );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $saved->get_billing_postcode() );
+		$this->assertNotContains( '_billing_gatepost_postcode', self::meta_keys( $order ) );
+	}
+
+	public function test_does_not_read_the_secret_key_for_an_order_outside_nigeria(): void {
+		update_option( Settings::SECRET_KEY, 'nipost_live_example' );
+		$reads = 0;
+		add_filter(
+			'pre_option_' . Settings::SECRET_KEY,
+			static function ( $value ) use ( &$reads ) {
+				++$reads;
+				return $value;
+			}
+		);
+		$order = self::typed_order( '' );
+		$order->set_billing_country( 'GB' );
+		ClassicCheckout::record( $order );
+		$this->assertSame( 0, $reads );
+	}
+
+	public function test_ignores_a_hook_call_that_does_not_hold_an_order(): void {
+		ClassicCheckout::record( 12 );
+		$this->assertTrue( true );
+	}
+
+	public function test_names_the_address_in_a_required_error(): void {
+		update_option( Settings::REQUIRED, 'yes' );
+		$form = self::form( array( 'ship_to_different_address' => true ) );
+		$this->assertSame(
+			array(
+				'billing_gatepost_postcode_required'  => 'Billing postcode is required.',
+				'shipping_gatepost_postcode_required' => 'Shipping postcode is required.',
+			),
+			self::errors_of( $form )
 		);
 	}
 }

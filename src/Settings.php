@@ -36,15 +36,34 @@ final class Settings {
 	}
 
 	/**
-	 * Reads the options. A missing option takes its default: not required, old postcodes
-	 * accepted, and a level 1 lookup when the store has a key.
+	 * Tells whether a customer in Nigeria must enter a postcode. It reads this one option only,
+	 * so a request that never needs the secret key never reads it.
+	 */
+	public static function is_required(): bool {
+		return 'yes' === get_option( self::REQUIRED, 'no' );
+	}
+
+	/**
+	 * Tells whether the store accepts an old 6-digit postcode. It reads this one option only.
+	 */
+	public static function accepts_legacy(): bool {
+		return 'reject' !== get_option( self::LEGACY, 'accept' );
+	}
+
+	/**
+	 * Reads every option, the secret key included. Call it only when an order needs a lookup:
+	 * the key is not autoloaded, so each read costs one query. A missing option takes its
+	 * default: not required, old postcodes accepted, and a level 1 lookup when the store has a
+	 * key.
 	 */
 	public static function load(): self {
-		$secret_key    = (string) get_option( self::SECRET_KEY, '' );
-		$required      = 'yes' === get_option( self::REQUIRED, 'no' );
-		$accept_legacy = 'reject' !== get_option( self::LEGACY, 'accept' );
-		$look_up       = 'none' !== get_option( self::CONFIRM, 'level1' );
-		$secret_key    = '' === $secret_key ? null : $secret_key;
-		return new self( $secret_key, $required, $accept_legacy, $look_up );
+		$secret_key = (string) get_option( self::SECRET_KEY, '' );
+		$look_up    = 'none' !== get_option( self::CONFIRM, 'level1' );
+		return new self(
+			'' === $secret_key ? null : $secret_key,
+			self::is_required(),
+			self::accepts_legacy(),
+			$look_up
+		);
 	}
 }

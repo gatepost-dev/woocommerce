@@ -46,7 +46,7 @@ final class BlockCheckout {
 				'label'             => __( 'Postcode', 'gatepost-postcode-for-woocommerce' ),
 				'location'          => 'address',
 				'type'              => 'text',
-				'required'          => Settings::load()->required,
+				'required'          => Settings::is_required(),
 				'hidden'            => array(
 					'type'       => 'object',
 					'properties' => array(
@@ -79,7 +79,7 @@ final class BlockCheckout {
 	 */
 	public static function sanitize( string $value ): string {
 		try {
-			return ( new Checker( Settings::load()->accept_legacy ) )->stored_form( $value );
+			return ( new Checker( Settings::accepts_legacy() ) )->stored_form( $value );
 		} catch ( Throwable ) {
 			return $value;
 		}
@@ -94,7 +94,7 @@ final class BlockCheckout {
 	 */
 	public static function validate( string $value ): WP_Error|bool {
 		try {
-			$checker = new Checker( Settings::load()->accept_legacy );
+			$checker = new Checker( Settings::accepts_legacy() );
 			$problem = $checker->format_problem( $value );
 		} catch ( Throwable $failure ) {
 			OrderPostcodes::warn_of(
@@ -110,18 +110,23 @@ final class BlockCheckout {
 	 * Checks the postcodes of the new order, and saves it. On any failure, the typed text stays
 	 * as the native postcode of the address.
 	 *
-	 * @param WC_Order $order The order that the checkout block created.
+	 * @param mixed $order The order that the checkout block created. Another plugin that fires the
+	 *                     hook can pass anything.
 	 */
-	public static function record( WC_Order $order ): void {
+	public static function record( $order ): void {
+		if ( ! $order instanceof WC_Order ) {
+			return;
+		}
 		$typed = array();
 		try {
 			$fields = Package::container()->get( CheckoutFields::class );
-			foreach ( array( 'billing', 'shipping' ) as $group ) {
+			foreach ( OrderPostcodes::GROUPS as $group ) {
 				$text            = $fields->get_field_from_object( self::FIELD, $order, $group );
 				$typed[ $group ] = (string) $text;
 			}
-			( new OrderPostcodes( Plugin::checker() ) )->record( $order, $typed );
+			OrderPostcodes::record_new_order( $order, $typed );
 			OrderPostcodes::keep_typed( $order, $typed );
+			OrderPostcodes::drop_copies( $order, OrderPostcodes::BLOCK_COPY, false );
 			$order->save();
 		} catch ( Throwable $failure ) {
 			OrderPostcodes::recover( $order, $typed, $failure );

@@ -54,6 +54,7 @@ final class WpTransport implements ClientInterface {
 				'headers'     => $headers,
 				'body'        => (string) $request->getBody(),
 				'timeout'     => $this->timeout_ms / 1000,
+				'user-agent'  => Plugin::USER_AGENT,
 				'redirection' => 0,
 			)
 		);

@@ -63,6 +63,20 @@ final class WpTransportTest extends WP_UnitTestCase {
 		$this->assertSame( 0, $this->sent['redirection'] );
 	}
 
+	public function test_sends_a_fixed_user_agent_with_no_address_of_the_store(): void {
+		$this->send(
+			array(
+				'response' => array( 'code' => 200 ),
+				'headers'  => array(),
+				'body'     => '',
+			)
+		);
+		$this->assertSame( 'gatepost-postcode-for-woocommerce', $this->sent['user-agent'] );
+		$this->assertStringNotContainsString( home_url(), $this->sent['user-agent'] );
+		$agent = $this->sent['user-agent'];
+		$this->assertStringNotContainsString( get_bloginfo( 'version' ), $agent );
+	}
+
 	public function test_gives_the_status_the_headers_and_the_body(): void {
 		$response = $this->send(
 			array(

@@ -22,7 +22,35 @@
 
 defined( 'ABSPATH' ) || exit;
 
-require_once __DIR__ . '/vendor-prefixed/autoload.php';
+// GitHub's source archive has no bundled SDK. Only the release zip has it.
+$gatepost_autoload = __DIR__ . '/vendor-prefixed/autoload.php';
+if ( ! is_readable( $gatepost_autoload ) ) {
+	add_action(
+		'admin_notices',
+		static function () {
+			if ( ! current_user_can( 'activate_plugins' ) ) {
+				return;
+			}
+			// Each sentence is one string, and the notice joins them with a space.
+			printf(
+				'<div class="notice notice-error"><p>%1$s %2$s <a href="%3$s">%4$s</a></p></div>',
+				esc_html__(
+					'Gatepost Postcode for WooCommerce cannot start. Its files are missing.',
+					'gatepost-postcode-for-woocommerce'
+				),
+				esc_html__(
+					'Install the plugin from the release zip, not from the source archive.',
+					'gatepost-postcode-for-woocommerce'
+				),
+				esc_url( 'https://github.com/gatepost-dev/woocommerce/releases' ),
+				esc_html__( 'Get the release zip.', 'gatepost-postcode-for-woocommerce' )
+			);
+		}
+	);
+	return;
+}
+require_once $gatepost_autoload;
+register_activation_hook( __FILE__, array( Gatepost\WooCommerce\Plugin::class, 'activate' ) );
 
 add_action(
 	'before_woocommerce_init',

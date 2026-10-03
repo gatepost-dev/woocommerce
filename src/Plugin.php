@@ -17,10 +17,17 @@ use Gatepost\WooCommerce\Vendor\Nyholm\Psr7\Factory\Psr17Factory;
 final class Plugin {
 
 	/**
-	 * The time limit of a lookup. A customer waits for it after placing the order, so the plugin
-	 * waits 3 seconds and does not retry. A lookup that fails marks the order "error".
+	 * The time limit of one lookup. A customer waits for it after placing the order, so the plugin
+	 * waits 3 seconds for each postcode and does not retry. A lookup that fails marks the order
+	 * "error".
 	 */
 	const LOOKUP_TIMEOUT_MS = 3000;
+
+	/**
+	 * The User-Agent header of a lookup. WordPress would send its version and the address of the
+	 * store, and NIPOST has no use for either.
+	 */
+	const USER_AGENT = 'gatepost-postcode-for-woocommerce';
 
 	/**
 	 * Adds every hook.
@@ -31,6 +38,18 @@ final class Plugin {
 		BlockCheckout::register();
 		OrdersList::register();
 		SettingsPage::register();
+	}
+
+	/**
+	 * Adds the three small options with their defaults, so that a request which reads one of
+	 * them costs no query for a missing option. The secret key is not added: it is not
+	 * autoloaded, and a request reads it only when an order needs a lookup. An option that
+	 * exists keeps its value.
+	 */
+	public static function activate(): void {
+		add_option( Settings::REQUIRED, 'no', '', true );
+		add_option( Settings::LEGACY, 'accept', '', true );
+		add_option( Settings::CONFIRM, 'level1', '', true );
 	}
 
 	/**

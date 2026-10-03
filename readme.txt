@@ -42,7 +42,7 @@ Not for the format check. Without a key, the plugin checks the format of each po
 
 = What happens when NIPOST's service is slow or down? =
 
-The plugin still places the order. It waits at most 3 seconds, marks the order "Check failed" and leaves an order note that says why.
+The plugin still places the order. It waits at most 3 seconds for each postcode, marks the order "Check failed" and leaves an order note that says why.
 
 = Can I use a test key? =
 
@@ -52,9 +52,9 @@ No. NIPOST's test keys work only on its staging service, which this plugin does 
 
 This plugin can connect to NIPOST's postcode gateway at https://api.postcode.gov.ng. It does so only when the store owner enters a live secret key and keeps the lookup setting on.
 
-* When: once for each postcode of a new order with a Nigerian address, after the customer places the order. The two addresses of an order share one lookup when they hold the same postcode.
-* What it sends: the postcode in its standard form, and the store's secret key. It sends no name, email address or other part of the address. It never sends an old 6-digit postcode. NIPOST also sees the IP address of the store's server with each request.
-* What it keeps: the postcode and the result of the check (valid, invalid, unchecked or error) as order meta. It keeps nothing else from the response.
+* When: after the customer places an order with a Nigerian address, one request for each different postcode of the order. The two addresses share one request when they hold the same postcode. A payment retry reuses the order. The order remembers a result of valid or invalid, so the same postcode is not sent again. After a failed request, a retry sends the postcode again. The plugin never retries by itself.
+* What it sends: the postcode in its standard form, and the store's secret key in the X-API-Key header. The User-Agent header is the fixed text gatepost-postcode-for-woocommerce. It holds no WordPress version and no address of your shop. The plugin sends no name, email address or other part of the address. It never sends an old 6-digit postcode. NIPOST also sees the IP address of the store's server with each request.
+* What it keeps: the postcode and the result of the check (valid, invalid, unchecked or error) as order meta. It keeps nothing else from the response. Order notes and the WooCommerce log name a postcode with its last part hidden.
 
 The Nigerian Postal Service (NIPOST) runs the gateway. Its terms of use: https://postcode.gov.ng/terms. Its acceptable use policy: https://postcode.gov.ng/acceptable-use. Its privacy policy: https://postcode.gov.ng/privacy. Read all three before you enter a key.
 

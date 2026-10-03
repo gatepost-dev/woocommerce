@@ -106,7 +106,7 @@ final class Checker {
 				CheckStatus::Error,
 				$postcode,
 				null,
-				$failure::class
+				OrderPostcodes::failure_name( $failure )
 			);
 		}
 		$status = $found ? CheckStatus::Valid : CheckStatus::Invalid;

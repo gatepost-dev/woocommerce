@@ -290,4 +290,64 @@ final class BlockCheckoutTest extends WP_UnitTestCase {
 		$this->assertSame( '', $order->get_meta( '_gatepost_billing_postcode' ) );
 		$this->assertSame( 'FC-01-Z99-ZZ-01', $order->get_meta( '_gatepost_shipping_postcode' ) );
 	}
+
+	/**
+	 * Gives the meta keys that a saved order holds.
+	 *
+	 * @param WC_Order $order The order.
+	 * @return array<int, string>
+	 */
+	private static function meta_keys( WC_Order $order ): array {
+		$fresh = wc_get_order( $order->get_id() );
+		self::assertInstanceOf( WC_Order::class, $fresh );
+		$keys = array();
+		foreach ( $fresh->get_meta_data() as $meta ) {
+			$keys[] = (string) $meta->key;
+		}
+		return $keys;
+	}
+
+	public function test_leaves_no_postcode_rows_on_an_order_outside_nigeria(): void {
+		$britain = self::british() + array( 'gatepost/postcode' => 'FC-01-Z99-ZZ-01' );
+		$order   = $this->order_of( StoreApiCheckout::place( $britain, $britain ) );
+		$keys    = self::meta_keys( $order );
+		$this->assertNotContains( '_wc_billing/gatepost/postcode', $keys );
+		$this->assertNotContains( '_wc_shipping/gatepost/postcode', $keys );
+		$this->assertNotContains( '_gatepost_billing_postcode', $keys );
+	}
+
+	public function test_does_not_look_up_again_when_a_payment_retry_reuses_the_order(): void {
+		update_option( Settings::SECRET_KEY, 'nipost_live_example' );
+		$gateway  = ( new FakeGateway() )->start();
+		$postcode = array( 'gatepost/postcode' => 'FC-01-Z99-ZZ-02' );
+		$order    = $this->order_of( StoreApiCheckout::place( $postcode, $postcode ) );
+		$notes    = self::notes_of( $order );
+		$this->assertCount( 1, $gateway->requests );
+		BlockCheckout::record( $order );
+		do_action( 'woocommerce_store_api_checkout_order_processed', $order );
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $saved );
+		$this->assertCount( 1, $gateway->requests );
+		$this->assertSame( $notes, self::notes_of( $saved ) );
+		$this->assertSame( 'invalid', $saved->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_does_not_read_the_secret_key_for_an_order_outside_nigeria(): void {
+		update_option( Settings::SECRET_KEY, 'nipost_live_example' );
+		$reads = 0;
+		add_filter(
+			'pre_option_' . Settings::SECRET_KEY,
+			static function ( $value ) use ( &$reads ) {
+				++$reads;
+				return $value;
+			}
+		);
+		$this->order_of( StoreApiCheckout::place( self::british(), self::british() ) );
+		$this->assertSame( 0, $reads );
+	}
+
+	public function test_ignores_a_hook_call_that_does_not_hold_an_order(): void {
+		BlockCheckout::record( 12 );
+		$this->assertTrue( true );
+	}
 }

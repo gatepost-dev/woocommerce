@@ -336,4 +336,96 @@ final class OrderPostcodesTest extends WP_UnitTestCase {
 		$this->assertSame( '', $order->get_meta( '_gatepost_billing_postcode' ) );
 		$this->assertSame( '', $order->get_meta( '_gatepost_postcode_check' ) );
 	}
+
+	public function test_does_not_look_up_a_known_postcode_again_for_the_same_order(): void {
+		$gateway = ( new FakeGateway() )->start();
+		$order   = self::order();
+		$typed   = array(
+			'billing'  => 'FC-01-Z99-ZZ-01',
+			'shipping' => 'FC-01-Z99-ZZ-02',
+		);
+		self::looking_up()->record( $order, $typed );
+		$order->save();
+		self::looking_up()->record( $order, $typed );
+		$order->save();
+		$this->assertCount( 2, $gateway->requests );
+		$this->assertSame( 'invalid', $order->get_meta( '_gatepost_postcode_check' ) );
+		$this->assertCount( 1, self::notes( $order ) );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $order->get_billing_postcode() );
+		$this->assertSame( 'FC-01-Z99-ZZ-02', $order->get_shipping_postcode() );
+	}
+
+	public function test_restores_the_address_postcode_when_a_retry_blanks_it(): void {
+		$gateway = ( new FakeGateway() )->start();
+		$order   = self::order( 'GB' );
+		$typed   = array( 'billing' => 'FC-01-Z99-ZZ-01' );
+		self::looking_up()->record( $order, $typed );
+		$order->set_billing_postcode( '' );
+		self::looking_up()->record( $order, $typed );
+		OrderPostcodes::keep_typed( $order, $typed );
+		$this->assertCount( 1, $gateway->requests );
+		$this->assertSame( 'valid', $order->get_meta( '_gatepost_postcode_check' ) );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $order->get_billing_postcode() );
+	}
+
+	public function test_looks_up_again_after_a_failed_lookup(): void {
+		$down  = ( new FakeGateway( 'no-response' ) )->start();
+		$order = self::order( 'GB' );
+		$typed = array( 'billing' => 'FC-01-Z99-ZZ-01' );
+		self::looking_up()->record( $order, $typed );
+		$this->assertSame( 'error', $order->get_meta( '_gatepost_postcode_check' ) );
+		remove_filter( 'pre_http_request', array( $down, 'answer' ), 10 );
+		$up = ( new FakeGateway() )->start();
+		self::looking_up()->record( $order, $typed );
+		$this->assertCount( 1, $down->requests );
+		$this->assertCount( 1, $up->requests );
+		$this->assertSame( 'valid', $order->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_looks_up_again_when_the_postcode_of_the_order_changed(): void {
+		$gateway = ( new FakeGateway() )->start();
+		$order   = self::order( 'GB' );
+		self::looking_up()->record( $order, array( 'billing' => 'FC-01-Z99-ZZ-01' ) );
+		self::looking_up()->record( $order, array( 'billing' => 'FC-01-Z99-ZZ-02' ) );
+		$this->assertCount( 2, $gateway->requests );
+		$this->assertSame( 'invalid', $order->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_forgets_the_postcode_of_an_address_that_is_no_longer_in_nigeria(): void {
+		( new FakeGateway() )->start();
+		$order = self::order( 'GB' );
+		self::looking_up()->record( $order, array( 'billing' => 'FC-01-Z99-ZZ-01' ) );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $order->get_meta( '_gatepost_billing_postcode' ) );
+		$order->set_billing_country( 'GB' );
+		self::looking_up()->record( $order, array( 'billing' => 'FC-01-Z99-ZZ-01' ) );
+		$this->assertSame( '', $order->get_meta( '_gatepost_billing_postcode' ) );
+		$this->assertSame( '', $order->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_keeps_a_stronger_status_when_it_keeps_a_typed_postcode(): void {
+		$order = self::order( 'GB' );
+		$order->update_meta_data( '_gatepost_billing_postcode', 'FC-01-Z99-ZZ-02' );
+		$order->set_billing_postcode( 'FC-01-Z99-ZZ-02' );
+		$order->update_meta_data( '_gatepost_postcode_check', 'invalid' );
+		$order->set_shipping_country( 'NG' );
+		OrderPostcodes::keep_typed(
+			$order,
+			array(
+				'billing'  => 'FC-01-Z99-ZZ-02',
+				'shipping' => 'EKO1A03FK01',
+			)
+		);
+		$this->assertSame( 'EKO1A03FK01', $order->get_shipping_postcode() );
+		$this->assertSame( 'invalid', $order->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_names_the_class_of_an_anonymous_failure_without_its_file(): void {
+		$failure = new class() extends RuntimeException {
+		};
+		$this->assertSame( 'RuntimeException@anonymous', OrderPostcodes::failure_name( $failure ) );
+		$this->assertSame(
+			'RuntimeException',
+			OrderPostcodes::failure_name( new RuntimeException( 'x' ) )
+		);
+	}
 }

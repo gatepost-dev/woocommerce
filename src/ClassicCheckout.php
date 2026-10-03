@@ -43,8 +43,8 @@ final class ClassicCheckout {
 	 */
 	public static function validate( array $data, WP_Error $errors ): void {
 		try {
-			$settings = Settings::load();
-			$checker  = new Checker( $settings->accept_legacy );
+			$required = Settings::is_required();
+			$checker  = new Checker( Settings::accepts_legacy() );
 			$groups   = array( 'billing' );
 			if ( ! empty( $data['ship_to_different_address'] ) ) {
 				$groups[] = 'shipping';
@@ -55,12 +55,12 @@ final class ClassicCheckout {
 					continue;
 				}
 				$typed   = (string) ( $data[ $key ] ?? '' );
-				$missing = $settings->required && '' === trim( $typed );
+				$missing = $required && '' === trim( $typed );
 				$asked   = in_array( $key . '_required', $errors->get_error_codes(), true );
 				if ( $missing && ! $asked ) {
 					$errors->add(
 						$key . '_required',
-						__( 'Postcode is required.', 'gatepost-postcode-for-woocommerce' ),
+						self::required_message( $group ),
 						array( 'id' => $key )
 					);
 				}
@@ -79,37 +79,41 @@ final class ClassicCheckout {
 	}
 
 	/**
-	 * Checks the postcodes of the new order. WooCommerce saved each field as order meta. This
-	 * reads that meta, and removes it only for an address whose postcode the plugin stored under
-	 * its own key. On any failure, the typed text stays as the native postcode of the address.
+	 * Gives the error for an empty postcode that the store requires. Each address has its own
+	 * whole string, so a customer with two Nigerian addresses knows which one to fix.
 	 *
-	 * @param WC_Order $order The new order.
+	 * @param string $group The address: billing or shipping.
 	 */
-	public static function record( WC_Order $order ): void {
+	private static function required_message( string $group ): string {
+		return 'billing' === $group
+			? __( 'Billing postcode is required.', 'gatepost-postcode-for-woocommerce' )
+			: __( 'Shipping postcode is required.', 'gatepost-postcode-for-woocommerce' );
+	}
+
+	/**
+	 * Checks the postcodes of the new order. WooCommerce saved each field as order meta. This
+	 * reads that meta, and removes it when it is empty, when the address is not in Nigeria, or
+	 * when the plugin stored the postcode under its own key. On any failure, the typed text stays
+	 * as the native postcode of the address.
+	 *
+	 * @param mixed $order The new order. Another plugin that fires the hook can pass anything.
+	 */
+	public static function record( $order ): void {
+		if ( ! $order instanceof WC_Order ) {
+			return;
+		}
 		$typed = array();
 		try {
-			foreach ( array( 'billing', 'shipping' ) as $group ) {
-				$typed[ $group ] = (string) $order->get_meta( self::meta_key( $group ) );
+			foreach ( OrderPostcodes::GROUPS as $group ) {
+				$copy            = sprintf( OrderPostcodes::CLASSIC_COPY, $group );
+				$typed[ $group ] = (string) $order->get_meta( $copy );
 			}
-			( new OrderPostcodes( Plugin::checker() ) )->record( $order, $typed );
+			OrderPostcodes::record_new_order( $order, $typed );
 			OrderPostcodes::keep_typed( $order, $typed );
-			foreach ( array( 'billing', 'shipping' ) as $group ) {
-				if ( '' !== (string) $order->get_meta( OrderPostcodes::meta_key( $group ) ) ) {
-					$order->delete_meta_data( self::meta_key( $group ) );
-				}
-			}
+			OrderPostcodes::drop_copies( $order, OrderPostcodes::CLASSIC_COPY, true );
 			$order->save();
 		} catch ( Throwable $failure ) {
 			OrderPostcodes::recover( $order, $typed, $failure );
 		}
-	}
-
-	/**
-	 * Gives the meta key where WooCommerce saves a classic field.
-	 *
-	 * @param string $group The address: billing or shipping.
-	 */
-	private static function meta_key( string $group ): string {
-		return '_' . $group . '_' . AddressLocale::FIELD;
 	}
 }
