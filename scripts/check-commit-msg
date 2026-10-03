@@ -20,7 +20,7 @@ if ! grep -Eiq '^signed-off-by: .+ <.+>' "$1"; then
 fi
 # A person can be named Claude or Copilot, so the check reads the address of the trailer. It
 # refuses each address at the domain of an AI company, and each address that an AI tool writes
-# elsewhere. To refuse a new tool, add its address here and a row to CheckCommitMsgTest.
+# elsewhere. To refuse a new tool, add its address here.
 ai_addresses='[^ <>@]+@(anthropic|openai)\.com|noreply@aider\.chat|cursoragent@cursor\.com'
 ai_addresses="${ai_addresses}|copilot@github\.com|claude-code@users\.noreply\.github\.com"
 ai_addresses="${ai_addresses}|gemini-code-assist@google\.com"

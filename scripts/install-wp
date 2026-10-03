@@ -35,12 +35,13 @@ site="$build/wp-$wp_version-wc-$wc_version-$db"
 mkdir -p "$downloads"
 
 fetch() {
-  local name="$1" url="$2"
+  local name="$1" url="$2" sum
+  sum="$(sum_of "$name")"
   if [ ! -f "$downloads/$name" ]; then
     curl -sSfL -o "$downloads/$name.part" "$url"
     mv "$downloads/$name.part" "$downloads/$name"
   fi
-  if ! echo "$(sum_of "$name")  $downloads/$name" | shasum -a 256 -c - > /dev/null; then
+  if ! echo "$sum  $downloads/$name" | shasum -a 256 -c - > /dev/null; then
     echo "The SHA-256 sum of $name does not match. Delete it and check the release." >&2
     exit 1
   fi

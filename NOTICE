@@ -5,5 +5,5 @@ This product is unofficial. The Nigerian Postal Service (NIPOST) did not make it
 Gatepost uses the name NIPOST only to describe compatibility with NIPOST's National Digital Postcode.
 
 The plugin bundles gatepost/postcode (Apache-2.0) and these packages under the MIT licence: nyholm/psr7,
-psr/http-client, psr/http-factory, psr/http-message and psr/simple-cache. Each bundled package keeps its
-licence file in vendor-prefixed/.
+psr/http-client, psr/http-factory, psr/http-message and psr/simple-cache. It also bundles the
+Composer autoloader (MIT). Each bundled package keeps its licence file in vendor-prefixed/.

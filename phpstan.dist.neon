@@ -15,6 +15,7 @@ parameters:
         - src
         - scripts/check-coverage.php
         - scripts/check-licences.php
+        - scripts/check-namespaces.php
     bootstrapFiles:
         - vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
         - vendor/php-stubs/woocommerce-stubs/woocommerce-packages-stubs.php

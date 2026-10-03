@@ -1,0 +1,6 @@
+{
+	"packages": [
+		{ "name": "wp-phpunit/wp-phpunit", "license": [ "GPL-2.0-or-later" ] }
+	],
+	"packages-dev": []
+}

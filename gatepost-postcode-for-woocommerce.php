@@ -7,7 +7,7 @@
  * Requires at least: 6.7
  * Requires PHP: 8.1
  * Requires Plugins: woocommerce
- * WC requires at least: 9.9
+ * WC requires at least: 10.0
  * WC tested up to: 11.1
  * Author: The Gatepost authors
  * License: Apache-2.0

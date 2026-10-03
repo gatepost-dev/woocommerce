@@ -1,0 +1,6 @@
+{
+	"packages": [],
+	"packages-dev": [
+		{ "name": "acme/tool", "license": [ "GPL-3.0-or-later" ] }
+	]
+}

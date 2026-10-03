@@ -27,5 +27,9 @@ if ( false === $gatepost_xml || ! isset( $gatepost_xml['line-rate'] ) ) {
 	exit( 2 );
 }
 $gatepost_rate = (float) $gatepost_xml['line-rate'];
-printf( "The tests cover %.2f %% of the lines. The floor is %d %%.\n", $gatepost_rate * 100, 80 );
+printf(
+	"The tests cover %.2f %% of the lines. The floor is %d %%.\n",
+	$gatepost_rate * 100,
+	GATEPOST_COVERAGE_FLOOR * 100
+);
 exit( $gatepost_rate < GATEPOST_COVERAGE_FLOOR ? 1 : 0 );
