@@ -8,6 +8,8 @@
 
 namespace Gatepost\WooCommerce;
 
+use Throwable;
+
 /**
  * Changes WooCommerce's address rules for Nigeria. The native postcode field stays hidden for
  * Nigeria, because WooCommerce checks it with the old 6-digit rule. The classic checkout gets the
@@ -51,6 +53,9 @@ final class AddressLocale {
 	 * Hides the native postcode field for Nigeria, and shows the plugin's field. The field is
 	 * required when the store says so, but not in a Store API request: the Store API checks
 	 * every field of the locale, and the checkout block has its own field with another key.
+	 * A classic request can look like a Store API request, so ClassicCheckout::validate() checks
+	 * the required setting itself. If the settings cannot be read, the field stays optional and
+	 * the plugin logs one warning.
 	 *
 	 * @param array<string, array<string, array<string, mixed>>> $locale The rules, by country code.
 	 * @return array<string, array<string, array<string, mixed>>>
@@ -58,8 +63,17 @@ final class AddressLocale {
 	public static function set_nigeria_rules( array $locale ): array {
 		$locale['NG']['postcode']['required'] = false;
 		$locale['NG']['postcode']['hidden']   = true;
-		$locale['NG'][ self::FIELD ]          = array(
-			'required' => Settings::load()->required && ! WC()->is_store_api_request(),
+		try {
+			$required = Settings::load()->required && ! WC()->is_store_api_request();
+		} catch ( Throwable $failure ) {
+			OrderPostcodes::warn_of(
+				'The plugin could not read its settings for the address rules.',
+				$failure
+			);
+			$required = false;
+		}
+		$locale['NG'][ self::FIELD ] = array(
+			'required' => $required,
 			'hidden'   => false,
 		);
 		return $locale;

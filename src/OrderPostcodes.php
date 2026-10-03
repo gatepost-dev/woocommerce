@@ -49,12 +49,9 @@ final class OrderPostcodes {
 			$this->store( $order, $typed );
 		} catch ( Throwable $failure ) {
 			// Nothing here may stop an order or break the thank-you page.
-			self::warn(
-				sprintf(
-					'Order %d: the plugin could not store the postcodes. It failed with %s.',
-					$order->get_id(),
-					$failure::class
-				)
+			self::warn_of(
+				sprintf( 'Order %d: the plugin could not store the postcodes.', $order->get_id() ),
+				$failure
 			);
 			self::keep_typed_safely( $order, $typed );
 		}
@@ -188,11 +185,44 @@ final class OrderPostcodes {
 	}
 
 	/**
+	 * Handles a failure of the plugin while it checks a new order: logs one warning, keeps the
+	 * typed postcodes as the native postcodes, and saves the order. It never throws, because
+	 * nothing here may stop an order or break the thank-you page.
+	 *
+	 * @param WC_Order              $order   The new order.
+	 * @param array<string, string> $typed   The text of each postcode field, by address.
+	 * @param Throwable             $failure The failure.
+	 */
+	public static function recover( WC_Order $order, array $typed, Throwable $failure ): void {
+		self::warn_of(
+			sprintf( 'Order %d: the plugin could not check the postcodes.', $order->get_id() ),
+			$failure
+		);
+		self::keep_typed_safely( $order, $typed );
+		try {
+			$order->save();
+		} catch ( Throwable ) {
+			return;
+		}
+	}
+
+	/**
+	 * Logs a failure of the plugin as one warning. It names the class of the failure and never
+	 * its message, which can hold a URL or a postcode.
+	 *
+	 * @param string    $what    What the plugin tried to do, as a sentence.
+	 * @param Throwable $failure The failure.
+	 */
+	public static function warn_of( string $what, Throwable $failure ): void {
+		self::warn( $what . ' It failed with ' . $failure::class . '.' );
+	}
+
+	/**
 	 * Writes one warning to the WooCommerce log. A broken log never stops the order.
 	 *
 	 * @param string $message The line. It holds no key and no full postcode.
 	 */
-	public static function warn( string $message ): void {
+	private static function warn( string $message ): void {
 		try {
 			wc_get_logger()->warning( $message, array( 'source' => 'gatepost' ) );
 		} catch ( Throwable ) {

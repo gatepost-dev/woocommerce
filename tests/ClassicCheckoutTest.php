@@ -272,4 +272,62 @@ final class ClassicCheckoutTest extends WP_UnitTestCase {
 			$log->messages
 		);
 	}
+
+	public function test_requires_a_nigerian_postcode_when_the_store_says_so(): void {
+		update_option( Settings::REQUIRED, 'yes' );
+		$this->assertSame(
+			array( 'billing_gatepost_postcode_required' => 'Postcode is required.' ),
+			self::errors_of( self::form( array() ) )
+		);
+		$britain = self::form(
+			array(
+				'billing_country' => 'GB',
+				'billing_state'   => '',
+			)
+		);
+		$this->assertSame( array(), self::errors_of( $britain ) );
+		delete_option( Settings::REQUIRED );
+		$this->assertSame( array(), self::errors_of( self::form( array() ) ) );
+	}
+
+	public function test_requires_the_postcode_when_a_classic_request_fakes_the_store_api(): void {
+		update_option( Settings::REQUIRED, 'yes' );
+		$page   = $_SERVER['REQUEST_URI'] ?? '';
+		$forged = false;
+		// Each WooCommerce version tells a Store API request in its own way, and a classic
+		// request can fake each one.
+		$uris = array(
+			'/checkout/?x=/wp-json/wc/store/v1/checkout',
+			'/checkout/?rest_route=/wc/store/v1/checkout',
+		);
+		try {
+			foreach ( $uris as $uri ) {
+				$_SERVER['REQUEST_URI'] = $uri;
+				// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Fake request.
+				parse_str( (string) wp_parse_url( $uri, PHP_URL_QUERY ), $_GET );
+				WC()->countries->locale = null;
+				$forged                 = $forged || WC()->is_store_api_request();
+				$this->assertSame(
+					array( 'billing_gatepost_postcode_required' => 'Postcode is required.' ),
+					self::errors_of( self::form( array() ) )
+				);
+			}
+		} finally {
+			$_SERVER['REQUEST_URI'] = $page;
+			$_GET                   = array();
+			WC()->countries->locale = null;
+		}
+		$this->assertTrue( $forged, 'WooCommerce took neither request for a Store API request.' );
+	}
+
+	public function test_adds_no_second_error_when_woocommerce_requires_the_field(): void {
+		update_option( Settings::REQUIRED, 'yes' );
+		$errors = new WP_Error();
+		$errors->add( 'billing_gatepost_postcode_required', 'WooCommerce says so.' );
+		ClassicCheckout::validate( self::form( array() ), $errors );
+		$this->assertSame(
+			array( 'WooCommerce says so.' ),
+			$errors->get_error_messages( 'billing_gatepost_postcode_required' )
+		);
+	}
 }

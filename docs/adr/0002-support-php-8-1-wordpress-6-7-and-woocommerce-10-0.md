@@ -4,9 +4,11 @@ VER-1 asks each repo to state its runtime floors, with an ADR for a floor that i
 
 ## WooCommerce 10.0
 
-The checkout block shows the plugin's field only for a Nigerian address. The Additional Checkout Fields API has done this with the `hidden` rule since WooCommerce 9.9. On WooCommerce 9.9.7, the server still checked a hidden address field: with the field required, a customer outside Nigeria could not place an order. On WooCommerce 10.0.0 and 10.0.4, the server skips the hidden field, and every test passes. The tests `BlockCheckoutTest::test_requires_a_postcode_in_nigeria_only_when_the_store_says_so` and `test_ignores_the_field_for_an_address_outside_nigeria` show the difference. So the floor is WooCommerce 10.0, and the plugin header says `WC requires at least: 10.0`.
+The checkout block shows the plugin's field only for a Nigerian address. The Additional Checkout Fields API does this with a `hidden` rule, and WooCommerce 9.9.7 has the rule. On WooCommerce 9.9.7, the server still checked a hidden address field: with the field required, a customer outside Nigeria could not place an order. On WooCommerce 10.0.0 and 10.0.4, the server skips the hidden field, every test passes, and one test is marked risky. The tests `BlockCheckoutTest::test_requires_a_postcode_in_nigeria_only_when_the_store_says_so` and `test_ignores_the_field_for_an_address_outside_nigeria` show the difference. So the floor is WooCommerce 10.0, and the plugin header says `WC requires at least: 10.0`.
 
-On PHP 8.4, WooCommerce 10.0 prints deprecation notices from its own code, which PHPUnit marks as risky. The floor job runs on PHP 8.1 and does not print them.
+We ran these tests on 3 Oct 2026 with PHP 8.4.14, the WordPress 7.1.2 test library and a SQLite database. We ran WooCommerce 9.9.7 and 10.0.0 on the 12 tests of `BlockCheckoutTest`, and WooCommerce 10.0.4 on the whole suite. We did not run WordPress 6.7.9 or PHP 8.1 for this evidence. The CI floor job runs that combination.
+
+The risky mark comes from deprecation notices that WooCommerce 10.0 prints from its own code on PHP 8.4.
 
 On 3 Oct 2026, the WordPress.org statistics (https://api.wordpress.org/stats/plugin/1.0/woocommerce) showed 34.5 % of WooCommerce sites on 11.1, 7.8 % on 11.0 and 8.1 % on 10.7. They group the other 49.5 % and do not show how many of those sites run 10.0 or later.
 

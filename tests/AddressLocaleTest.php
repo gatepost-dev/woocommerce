@@ -9,6 +9,9 @@
 namespace Gatepost\WooCommerce\Tests;
 
 use Gatepost\WooCommerce\AddressLocale;
+use Gatepost\WooCommerce\Settings;
+use Gatepost\WooCommerce\Tests\Support\CapturedLog;
+use RuntimeException;
 use WP_UnitTestCase;
 
 /**
@@ -54,6 +57,27 @@ final class AddressLocaleTest extends WP_UnitTestCase {
 		$this->assertSame(
 			'#billing_gatepost_postcode_field, #shipping_gatepost_postcode_field',
 			$selectors['gatepost_postcode']
+		);
+	}
+
+	public function test_keeps_the_field_optional_and_logs_when_the_settings_break(): void {
+		$log = CapturedLog::install();
+		add_filter(
+			'pre_option_' . Settings::REQUIRED,
+			static function () {
+				throw new RuntimeException( 'options broke' );
+			}
+		);
+		$locale = AddressLocale::set_nigeria_rules( array() );
+		CapturedLog::restore();
+		$this->assertFalse( $locale['NG']['gatepost_postcode']['required'] );
+		$this->assertFalse( $locale['NG']['gatepost_postcode']['hidden'] );
+		$this->assertSame(
+			array(
+				'The plugin could not read its settings for the address rules.'
+					. ' It failed with RuntimeException.',
+			),
+			$log->messages
 		);
 	}
 }

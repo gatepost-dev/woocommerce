@@ -35,8 +35,9 @@ final class BlockCheckout {
 
 	/**
 	 * Registers the field. WooCommerce evaluates the hidden rule for the billing and the shipping
-	 * address one at a time, and a hidden field is never required. The required setting applies
-	 * from the next request.
+	 * address one at a time, and a hidden field is never required. The field reads the required
+	 * setting once, when WooCommerce starts, so a saved setting applies from the next request that
+	 * starts WooCommerce.
 	 */
 	public static function register_field(): void {
 		woocommerce_register_additional_checkout_field(
@@ -95,7 +96,11 @@ final class BlockCheckout {
 		try {
 			$checker = new Checker( Settings::load()->accept_legacy );
 			$problem = $checker->format_problem( $value );
-		} catch ( Throwable ) {
+		} catch ( Throwable $failure ) {
+			OrderPostcodes::warn_of(
+				'The plugin could not check the format of a postcode.',
+				$failure
+			);
 			return true;
 		}
 		return null === $problem ? true : new WP_Error( 'gatepost_postcode_format', $problem );
@@ -119,20 +124,7 @@ final class BlockCheckout {
 			OrderPostcodes::keep_typed( $order, $typed );
 			$order->save();
 		} catch ( Throwable $failure ) {
-			// Nothing here may stop an order or break the thank-you page.
-			OrderPostcodes::warn(
-				sprintf(
-					'Order %d: the plugin could not check the postcodes. It failed with %s.',
-					$order->get_id(),
-					$failure::class
-				)
-			);
-			OrderPostcodes::keep_typed_safely( $order, $typed );
-			try {
-				$order->save();
-			} catch ( Throwable ) {
-				return;
-			}
+			OrderPostcodes::recover( $order, $typed, $failure );
 		}
 	}
 }

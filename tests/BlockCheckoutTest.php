@@ -240,4 +240,54 @@ final class BlockCheckoutTest extends WP_UnitTestCase {
 		$this->assertCount( 1, $log->messages );
 		$this->assertStringContainsString( 'RuntimeException', $log->messages[0] );
 	}
+
+	public function test_logs_the_class_when_the_settings_break_at_validation(): void {
+		$log = CapturedLog::install();
+		self::break_the_settings();
+		$this->assertTrue( BlockCheckout::validate( 'EKO1A03FK01' ) );
+		$this->assertSame(
+			array(
+				'The plugin could not check the format of a postcode.'
+					. ' It failed with RuntimeException.',
+			),
+			$log->messages
+		);
+	}
+
+	/**
+	 * Gives an address in Britain.
+	 *
+	 * @return array<string, string>
+	 */
+	private static function british(): array {
+		return array(
+			'country'  => 'GB',
+			'state'    => '',
+			'city'     => 'London',
+			'postcode' => 'SW1A 1AA',
+		);
+	}
+
+	public function test_requires_the_postcode_of_each_nigerian_address_in_a_mixed_order(): void {
+		update_option( Settings::REQUIRED, 'yes' );
+		self::register_field_again();
+		$typed = array( 'gatepost/postcode' => 'FC-01-Z99-ZZ-01' );
+
+		$response = StoreApiCheckout::place( array(), self::british() );
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertStringContainsString( 'Postcode is required', self::text_of( $response ) );
+		$response = StoreApiCheckout::place( self::british(), array() );
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertStringContainsString( 'Postcode is required', self::text_of( $response ) );
+
+		Shop::fill_cart();
+		$order = $this->order_of( StoreApiCheckout::place( $typed, self::british() ) );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $order->get_meta( '_gatepost_billing_postcode' ) );
+		$this->assertSame( '', $order->get_meta( '_gatepost_shipping_postcode' ) );
+		$this->assertSame( 'SW1A 1AA', $order->get_shipping_postcode() );
+		Shop::fill_cart();
+		$order = $this->order_of( StoreApiCheckout::place( self::british(), $typed ) );
+		$this->assertSame( '', $order->get_meta( '_gatepost_billing_postcode' ) );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $order->get_meta( '_gatepost_shipping_postcode' ) );
+	}
 }

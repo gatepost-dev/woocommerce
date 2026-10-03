@@ -32,15 +32,20 @@ final class ClassicCheckout {
 	}
 
 	/**
-	 * Adds an error for each postcode in a Nigerian address that has the wrong format.
+	 * Adds an error for each postcode in a Nigerian address that has the wrong format. When the
+	 * store requires the postcode, it also adds an error for an empty one. WooCommerce makes the
+	 * same check from the address rules, but those rules leave the field optional in a request
+	 * that looks like a Store API request, and a classic request can fake that look. So this
+	 * check does not depend on the rules.
 	 *
 	 * @param array<string, mixed> $data   The posted checkout data, after WooCommerce cleaned it.
 	 * @param WP_Error             $errors The checkout errors.
 	 */
 	public static function validate( array $data, WP_Error $errors ): void {
 		try {
-			$checker = new Checker( Settings::load()->accept_legacy );
-			$groups  = array( 'billing' );
+			$settings = Settings::load();
+			$checker  = new Checker( $settings->accept_legacy );
+			$groups   = array( 'billing' );
 			if ( ! empty( $data['ship_to_different_address'] ) ) {
 				$groups[] = 'shipping';
 			}
@@ -49,16 +54,26 @@ final class ClassicCheckout {
 				if ( 'NG' !== ( $data[ $group . '_country' ] ?? '' ) ) {
 					continue;
 				}
-				$problem = $checker->format_problem( (string) ( $data[ $key ] ?? '' ) );
+				$typed   = (string) ( $data[ $key ] ?? '' );
+				$missing = $settings->required && '' === trim( $typed );
+				$asked   = in_array( $key . '_required', $errors->get_error_codes(), true );
+				if ( $missing && ! $asked ) {
+					$errors->add(
+						$key . '_required',
+						__( 'Postcode is required.', 'gatepost-postcode-for-woocommerce' ),
+						array( 'id' => $key )
+					);
+				}
+				$problem = $checker->format_problem( $typed );
 				if ( null !== $problem ) {
 					$errors->add( $key . '_validation', $problem, array( 'id' => $key ) );
 				}
 			}
 		} catch ( Throwable $failure ) {
 			// A failure of the plugin never stops an order. Only a wrong format does.
-			OrderPostcodes::warn(
-				'The plugin could not check the format of a postcode. It failed with '
-					. $failure::class . '.'
+			OrderPostcodes::warn_of(
+				'The plugin could not check the format of a postcode.',
+				$failure
 			);
 		}
 	}
@@ -85,15 +100,7 @@ final class ClassicCheckout {
 			}
 			$order->save();
 		} catch ( Throwable $failure ) {
-			// Nothing here may stop an order or break the thank-you page.
-			OrderPostcodes::warn(
-				sprintf(
-					'Order %d: the plugin could not check the postcodes. It failed with %s.',
-					$order->get_id(),
-					$failure::class
-				)
-			);
-			self::save_typed( $order, $typed );
+			OrderPostcodes::recover( $order, $typed, $failure );
 		}
 	}
 
@@ -104,20 +111,5 @@ final class ClassicCheckout {
 	 */
 	private static function meta_key( string $group ): string {
 		return '_' . $group . '_' . AddressLocale::FIELD;
-	}
-
-	/**
-	 * Keeps the typed text after a failure, and saves the order. It never throws.
-	 *
-	 * @param WC_Order              $order The new order.
-	 * @param array<string, string> $typed The text of each postcode field.
-	 */
-	private static function save_typed( WC_Order $order, array $typed ): void {
-		OrderPostcodes::keep_typed_safely( $order, $typed );
-		try {
-			$order->save();
-		} catch ( Throwable ) {
-			return;
-		}
 	}
 }
