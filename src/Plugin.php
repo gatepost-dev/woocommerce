@@ -26,6 +26,8 @@ final class Plugin {
 	 * Adds every hook.
 	 */
 	public static function boot(): void {
+		AddressLocale::register();
+		ClassicCheckout::register();
 		SettingsPage::register();
 	}
 
