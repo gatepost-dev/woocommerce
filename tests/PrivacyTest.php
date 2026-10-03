@@ -225,4 +225,47 @@ final class PrivacyTest extends WP_UnitTestCase {
 		$suggested = (string) wp_json_encode( $policy );
 		$this->assertStringContainsString( 'Gatepost Postcode for WooCommerce', $suggested );
 	}
+
+	/**
+	 * Places a block order as a customer with an account.
+	 */
+	private function block_customer_order(): int {
+		$user_id = self::factory()->user->create( array( 'user_email' => self::EMAIL ) );
+		wp_set_current_user( $user_id );
+		$this->block_order();
+		$this->assertSame(
+			'FC-01-Z99-ZZ-01',
+			get_user_meta( $user_id, '_wc_billing/gatepost/postcode', true ),
+			'WooCommerce saves the block field in the user meta.'
+		);
+		return $user_id;
+	}
+
+	public function test_exports_the_block_postcodes_of_a_customer_with_an_account(): void {
+		$this->block_customer_order();
+		$text = self::exported_text( WC_Privacy_Exporters::customer_data_exporter( self::EMAIL ) );
+		$this->assertStringContainsString( 'Billing Nigerian postcode', $text );
+		$this->assertStringContainsString( 'FC-01-Z99-ZZ-01', $text );
+		$this->assertStringContainsString( 'FC-01-Z99-ZZ-02', $text );
+	}
+
+	public function test_erases_the_block_postcodes_of_a_customer_with_an_account(): void {
+		$user_id  = $this->block_customer_order();
+		$response = WC_Privacy_Erasers::customer_data_eraser( self::EMAIL, 1 );
+		$this->assertTrue( $response['items_removed'] );
+		$this->assertSame( '', get_user_meta( $user_id, '_wc_billing/gatepost/postcode', true ) );
+		$this->assertSame( '', get_user_meta( $user_id, '_wc_shipping/gatepost/postcode', true ) );
+		$keys = array_keys( get_user_meta( $user_id ) );
+		$this->assertNotContains( '_wc_billing/gatepost/postcode', $keys );
+		$this->assertNotContains( '_wc_shipping/gatepost/postcode', $keys );
+	}
+
+	public function test_erases_the_memory_of_each_address_with_the_order(): void {
+		$order = $this->classic_order();
+		$order->update_meta_data( '_gatepost_billing_postcode_check', 'valid:abc' );
+		$order->save();
+		self::erase_orders();
+		$keys = wp_list_pluck( self::reloaded( $order )->get_meta_data(), 'key' );
+		$this->assertNotContains( '_gatepost_billing_postcode_check', $keys );
+	}
 }

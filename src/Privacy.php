@@ -167,6 +167,8 @@ final class Privacy {
 				foreach ( OrderPostcodes::postcode_keys( $group ) as $key ) {
 					$order->delete_meta_data( $key );
 				}
+				// The memory of an address holds a hash of its postcode.
+				$order->delete_meta_data( OrderPostcodes::memory_key( $group ) );
 			}
 			$order->save();
 		} catch ( Throwable $failure ) {
@@ -189,7 +191,10 @@ final class Privacy {
 			return $data;
 		}
 		foreach ( OrderPostcodes::GROUPS as $group ) {
-			$value = (string) $customer->get_meta( $group . '_' . AddressLocale::FIELD );
+			$value = '';
+			foreach ( self::customer_keys( $group ) as $key ) {
+				$value = '' === $value ? (string) $customer->get_meta( $key ) : $value;
+			}
 			if ( '' !== $value ) {
 				$data[] = array(
 					'name'  => self::label( $group ),
@@ -213,11 +218,14 @@ final class Privacy {
 		}
 		try {
 			foreach ( OrderPostcodes::GROUPS as $group ) {
-				$key = $group . '_' . AddressLocale::FIELD;
-				if ( '' === (string) $customer->get_meta( $key ) ) {
+				$held = false;
+				foreach ( self::customer_keys( $group ) as $key ) {
+					$held = $held || '' !== (string) $customer->get_meta( $key );
+					$customer->delete_meta_data( $key );
+				}
+				if ( ! $held ) {
 					continue;
 				}
-				$customer->delete_meta_data( $key );
 				$customer->save();
 				/* translators: %s: a piece of data, such as "Billing Nigerian postcode". */
 				$removed = __( 'Removed customer "%s"', 'gatepost-postcode-for-woocommerce' );
@@ -232,6 +240,20 @@ final class Privacy {
 			);
 		}
 		return $response;
+	}
+
+	/**
+	 * Gives the user meta keys that can hold the postcode of one address of a customer: the key
+	 * of the classic field, and the key that the checkout block saves.
+	 *
+	 * @param string $group The address: billing or shipping.
+	 * @return array<int, string>
+	 */
+	private static function customer_keys( string $group ): array {
+		return array(
+			$group . '_' . AddressLocale::FIELD,
+			sprintf( OrderPostcodes::BLOCK_COPY, $group ),
+		);
 	}
 
 	/**

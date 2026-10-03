@@ -86,4 +86,26 @@ final class CheckCiRunsTest extends WP_UnitTestCase {
 		$this->assertSame( 1, $this->run_script( 'ci-not-json.json' )[0] );
 		$this->assertSame( 1, $this->run_script( 'does-not-exist.json' )[0] );
 	}
+
+	public function test_expects_the_jobs_and_the_legs_of_the_ci_workflow(): void {
+		$root = dirname( __DIR__ );
+		// phpcs:disable WordPress.WP.AlternativeFunctions -- these are local files.
+		$workflow = (string) file_get_contents( $root . '/.github/workflows/ci.yml' );
+		$script   = (string) file_get_contents( $root . '/scripts/check-ci-runs.php' );
+		// phpcs:enable
+		preg_match( '/GATEPOST_TESTS_LEGS\s*=\s*(\d+)/', $script, $legs );
+		preg_match( '/GATEPOST_REQUIRED_JOBS\s*=\s*array\(([^)]*)\)/', $script, $jobs );
+		preg_match_all( "/'([a-z-]+)'/", $jobs[1] ?? '', $names );
+		$section = substr( $workflow, (int) strpos( $workflow, "\njobs:\n" ) );
+		preg_match_all( '/^  ([a-z-]+):$/m', $section, $found );
+		$expected = array_merge( $names[1], array( 'tests' ) );
+		sort( $expected );
+		$actual = $found[1];
+		sort( $actual );
+		$this->assertSame( $expected, $actual, 'ci.yml has a job that the gate does not know.' );
+		preg_match( '/^  tests:\n.*?(?=^  [a-z-]+:\n)/ms', $section, $tests );
+		$rows          = preg_match_all( '/^\s+- \{ php:/m', $tests[0] ?? '' );
+		$expected_legs = (int) ( $legs[1] ?? 0 );
+		$this->assertSame( $expected_legs, $rows, 'The matrix has another number of legs.' );
+	}
 }

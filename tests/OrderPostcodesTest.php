@@ -428,4 +428,104 @@ final class OrderPostcodesTest extends WP_UnitTestCase {
 			OrderPostcodes::failure_name( new RuntimeException( 'x' ) )
 		);
 	}
+
+	/**
+	 * Answers the gateway with the fixtures, but fails the lookup of FC-01-Z99-ZZ-02.
+	 *
+	 * @param array<int, string> $urls The URL of each request, filled in as requests arrive.
+	 */
+	private static function flaky_gateway( array &$urls ): void {
+		$fake = new FakeGateway();
+		add_filter(
+			'pre_http_request',
+			static function ( $preempt, $args, $url ) use ( &$urls, $fake ) {
+				if ( FakeGateway::HOST !== wp_parse_url( $url, PHP_URL_HOST ) ) {
+					return $preempt;
+				}
+				$urls[] = $url;
+				if ( false !== strpos( $url, 'FC-01-Z99-ZZ-02' ) ) {
+					return new \WP_Error( 'http_request_failed', 'no connection' );
+				}
+				return $fake->answer( $preempt, $args, $url );
+			},
+			9,
+			3
+		);
+	}
+
+	public function test_a_retry_sends_only_the_postcode_that_has_no_answer(): void {
+		$urls  = array();
+		$order = self::order();
+		$typed = array(
+			'billing'  => 'FC-01-Z99-ZZ-01',
+			'shipping' => 'FC-01-Z99-ZZ-02',
+		);
+		self::flaky_gateway( $urls );
+		self::looking_up()->record( $order, $typed );
+		$this->assertCount( 2, $urls );
+		$this->assertSame( 'error', $order->get_meta( '_gatepost_postcode_check' ) );
+		self::looking_up()->record( $order, $typed );
+		$this->assertCount( 3, $urls, 'Only the failed shipping postcode goes out again.' );
+		$this->assertStringContainsString( 'ZZ-02', $urls[2] );
+	}
+
+	public function test_a_retry_sends_a_failed_postcode_next_to_an_unknown_one(): void {
+		$urls  = array();
+		$order = self::order();
+		$typed = array(
+			'billing'  => 'FC-01-Z99-ZZ-03',
+			'shipping' => 'FC-01-Z99-ZZ-02',
+		);
+		self::flaky_gateway( $urls );
+		self::looking_up()->record( $order, $typed );
+		$this->assertSame( 'invalid', $order->get_meta( '_gatepost_postcode_check' ) );
+		self::looking_up()->record( $order, $typed );
+		$this->assertCount( 3, $urls );
+		$this->assertStringContainsString( 'ZZ-02', $urls[2] );
+		$found = array_filter(
+			self::notes( $order ),
+			static fn( $note ) => false !== strpos( $note, 'no record of the billing' )
+		);
+		$this->assertCount( 1, $found, 'The unknown postcode gets one note.' );
+	}
+
+	public function test_a_country_change_away_and_back_sends_nothing_again(): void {
+		$gateway = ( new FakeGateway() )->start();
+		$order   = self::order();
+		$typed   = array(
+			'billing'  => 'FC-01-Z99-ZZ-03',
+			'shipping' => 'FC-01-Z99-ZZ-04',
+		);
+		self::looking_up()->record( $order, $typed );
+		$this->assertCount( 2, $gateway->requests );
+		$order->set_billing_country( 'GB' );
+		self::looking_up()->record( $order, $typed );
+		$this->assertSame( '', $order->get_meta( '_gatepost_billing_postcode' ) );
+		$order->set_billing_country( 'NG' );
+		self::looking_up()->record( $order, $typed );
+		$this->assertCount( 2, $gateway->requests, 'No postcode goes out again.' );
+		$this->assertCount( 2, self::notes( $order ), 'No note is added again.' );
+		$this->assertSame( 'FC-01-Z99-ZZ-03', $order->get_meta( '_gatepost_billing_postcode' ) );
+		$this->assertSame( 'FC-01-Z99-ZZ-03', $order->get_billing_postcode() );
+		$this->assertSame( 'invalid', $order->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_a_remembered_retry_reads_no_secret_key(): void {
+		update_option( Settings::SECRET_KEY, 'nipost_live_example' );
+		( new FakeGateway() )->start();
+		$order = self::order( 'GB' );
+		$typed = array( 'billing' => 'FC-01-Z99-ZZ-01' );
+		OrderPostcodes::record_new_order( $order, $typed );
+		$reads = 0;
+		add_filter(
+			'pre_option_' . Settings::SECRET_KEY,
+			static function ( $value ) use ( &$reads ) {
+				++$reads;
+				return $value;
+			}
+		);
+		OrderPostcodes::record_new_order( $order, $typed );
+		$this->assertSame( 0, $reads );
+		$this->assertSame( 'valid', $order->get_meta( '_gatepost_postcode_check' ) );
+	}
 }

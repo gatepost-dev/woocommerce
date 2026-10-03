@@ -56,6 +56,18 @@ final class OrderPostcodes {
 	}
 
 	/**
+	 * Gives the meta key that remembers the result of one address. The value is the status, a
+	 * colon, and a keyed hash of the stored postcode. The hash lets a retry see that the postcode
+	 * is the same, and it holds no postcode. It stays when an address leaves Nigeria and comes
+	 * back, so an unchanged postcode is not sent again. An erase request removes it.
+	 *
+	 * @param string $group The address: billing or shipping.
+	 */
+	public static function memory_key( string $group ): string {
+		return '_gatepost_' . $group . '_postcode_check';
+	}
+
+	/**
 	 * Gives every meta key that can hold the full postcode of one address: the plugin's own key,
 	 * and the copies that each checkout leaves for WooCommerce.
 	 *
@@ -79,7 +91,13 @@ final class OrderPostcodes {
 	 */
 	public static function record_new_order( WC_Order $order, array $typed ): void {
 		if ( array() !== self::nigerian_texts( $order, $typed ) ) {
-			( new self( Plugin::checker() ) )->record( $order, $typed );
+			// The format check needs no key. The key is read only for a postcode with no answer.
+			$plain = new self( new Checker( Settings::accepts_legacy() ) );
+			$self  = $plain;
+			if ( $plain->needs_lookup( $order, $typed ) ) {
+				$self = new self( Plugin::checker() );
+			}
+			$self->record( $order, $typed );
 			return;
 		}
 		foreach ( self::GROUPS as $group ) {
@@ -194,54 +212,72 @@ final class OrderPostcodes {
 	}
 
 	/**
-	 * Checks each postcode once and writes the results.
+	 * Tells whether any Nigerian postcode of the order has no answer yet.
+	 *
+	 * @param WC_Order              $order The order.
+	 * @param array<string, string> $typed The text of each postcode field, by address.
+	 */
+	private function needs_lookup( WC_Order $order, array $typed ): bool {
+		foreach ( self::nigerian_texts( $order, $typed ) as $group => $text ) {
+			$form = $this->checker->stored_form( $text );
+			if ( null === $this->remembered( $order, $group, $form ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Gives the answer that the order remembers for one address and one postcode: valid or
+	 * invalid. A failed or skipped check (error or unchecked) is not an answer, so a retry tries
+	 * it again. A payment retry reuses the order of the failed payment, and without this memory
+	 * each retry would use the store's rate limit on NIPOST's gateway.
+	 *
+	 * @param WC_Order $order The order.
+	 * @param string   $group The address: billing or shipping.
+	 * @param string   $form  The stored form of the postcode.
+	 */
+	private function remembered( WC_Order $order, string $group, string $form ): ?CheckStatus {
+		$value = (string) $order->get_meta( self::memory_key( $group ) );
+		$parts = explode( ':', $value, 2 );
+		$known = array( CheckStatus::Valid, CheckStatus::Invalid );
+		$state = CheckStatus::tryFrom( $parts[0] );
+		$same  = hash_equals( wp_hash( $form ), $parts[1] ?? '' );
+		if ( ! in_array( $state, $known, true ) || ! $same ) {
+			return null;
+		}
+		return $state;
+	}
+
+	/**
+	 * Checks each postcode once and writes the results. An address with a remembered answer for
+	 * the same postcode is not looked up and gets no second note. The status of the order sums up
+	 * the answers of all its Nigerian addresses.
 	 *
 	 * @param WC_Order              $order The new order.
 	 * @param array<string, string> $typed The text of each postcode field.
 	 */
 	private function store( WC_Order $order, array $typed ): void {
-		$texts = self::nigerian_texts( $order, $typed );
-		$forms = array_map( array( $this->checker, 'stored_form' ), $texts );
-		$held  = array();
+		$texts    = self::nigerian_texts( $order, $typed );
+		$forms    = array_map( array( $this->checker, 'stored_form' ), $texts );
+		$statuses = array();
+		$checks   = array();
 		foreach ( self::GROUPS as $group ) {
-			if ( '' !== (string) $order->get_meta( self::meta_key( $group ) ) ) {
-				$held[] = $group;
+			$form = $forms[ $group ] ?? null;
+			if ( null === $form ) {
+				// An address outside Nigeria, or with no text, keeps no postcode.
+				$order->delete_meta_data( self::meta_key( $group ) );
+				continue;
 			}
-		}
-		if ( self::already_checked( $order, $forms, $held ) ) {
-			foreach ( $forms as $group => $form ) {
+			$state = $this->remembered( $order, $group, $form );
+			if ( null !== $state ) {
+				$order->update_meta_data( self::meta_key( $group ), $form );
 				self::set_address_postcode( $order, $group, $form );
+				$statuses[] = $state;
+				continue;
 			}
-			return;
-		}
-		$checks = $this->look_up_all( $order, $texts, $forms );
-		if ( array() === $checks ) {
-			$order->delete_meta_data( self::CHECK_META );
-			return;
-		}
-		$statuses = array_map( static fn( Check $check ) => $check->status, $checks );
-		$status   = CheckStatus::for_order( array_values( $statuses ) );
-		$order->update_meta_data( self::CHECK_META, $status->value );
-	}
-
-	/**
-	 * Checks each Nigerian postcode once, writes the results, and forgets the stored postcode of
-	 * an address that the plugin cannot check.
-	 *
-	 * @param WC_Order              $order The new order.
-	 * @param array<string, string> $texts The text of each Nigerian postcode, by address.
-	 * @param array<string, string> $forms The stored form of each text, by address.
-	 * @return array<string, Check> The check of each distinct stored form.
-	 */
-	private function look_up_all( WC_Order $order, array $texts, array $forms ): array {
-		$checks = array();
-		foreach ( self::GROUPS as $group ) {
-			$form  = $forms[ $group ] ?? null;
-			$fresh = null !== $form && ! isset( $checks[ $form ] );
-			$check = null;
-			if ( null !== $form ) {
-				$check = $checks[ $form ] ?? $this->checker->check( $texts[ $group ] );
-			}
+			$fresh = ! isset( $checks[ $form ] );
+			$check = $checks[ $form ] ?? $this->checker->check( $texts[ $group ] );
 			if ( null === $check ) {
 				// An address that is not checkable keeps no postcode from an earlier attempt.
 				$order->delete_meta_data( self::meta_key( $group ) );
@@ -249,38 +285,13 @@ final class OrderPostcodes {
 			}
 			$checks[ $form ] = $check;
 			$this->write( $order, $group, $check, $fresh );
+			$statuses[] = $check->status;
 		}
-		return $checks;
-	}
-
-	/**
-	 * Tells whether the order already holds the result of a lookup for these postcodes: the same
-	 * stored form for each address, and a status of valid or invalid. A failed or skipped check
-	 * (error or unchecked) is tried again. A payment retry reuses the order of the failed payment,
-	 * and without this memory each retry would use the store's rate limit on NIPOST's gateway.
-	 *
-	 * @param WC_Order              $order The order.
-	 * @param array<string, string> $forms The stored form of each Nigerian postcode, by address.
-	 * @param array<int, string>    $held  The addresses that hold a stored postcode now.
-	 */
-	private static function already_checked( WC_Order $order, array $forms, array $held ): bool {
-		if ( array() === $forms ) {
-			return false;
+		if ( array() === $statuses ) {
+			$order->delete_meta_data( self::CHECK_META );
+			return;
 		}
-		$groups = array_keys( $forms );
-		sort( $groups );
-		sort( $held );
-		$status = CheckStatus::tryFrom( (string) $order->get_meta( self::CHECK_META ) );
-		$known  = array( CheckStatus::Valid, CheckStatus::Invalid );
-		if ( $groups !== $held || ! in_array( $status, $known, true ) ) {
-			return false;
-		}
-		foreach ( $forms as $group => $form ) {
-			if ( (string) $order->get_meta( self::meta_key( $group ) ) !== $form ) {
-				return false;
-			}
-		}
-		return true;
+		$order->update_meta_data( self::CHECK_META, CheckStatus::for_order( $statuses )->value );
 	}
 
 	/**
@@ -313,6 +324,10 @@ final class OrderPostcodes {
 	 */
 	private function write( WC_Order $order, string $group, Check $check, bool $fresh ): void {
 		$order->update_meta_data( self::meta_key( $group ), $check->postcode );
+		$order->update_meta_data(
+			self::memory_key( $group ),
+			$check->status->value . ':' . wp_hash( $check->postcode )
+		);
 		self::set_address_postcode( $order, $group, $check->postcode );
 		if ( null === $check->parsed ) {
 			return;

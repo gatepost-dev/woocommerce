@@ -19,7 +19,9 @@
 'cli' === PHP_SAPI || exit( 1 );
 
 // The jobs of ci.yml that gate a release. The tests job runs once for each leg of its matrix:
-// the floors, the newest releases and MySQL. A leg that is missing fails the gate.
+// the floors, the newest releases and MySQL. A leg that is missing fails the gate. A test of the
+// plugin compares these names and the leg count with ci.yml, so a new leg cannot go unseen. The
+// gate reads the runs by job name, and ci.yml is the only workflow that pushes to main.
 const GATEPOST_REQUIRED_JOBS = array( 'check', 'e2e', 'plugin-check' );
 const GATEPOST_TESTS_PREFIX  = 'tests (';
 const GATEPOST_TESTS_LEGS    = 3;
