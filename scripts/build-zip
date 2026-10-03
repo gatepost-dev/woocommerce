@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 The Gatepost authors
+# SPDX-License-Identifier: Apache-2.0
+# Builds dist/gatepost-postcode-for-woocommerce.zip, the file that WordPress.org and the GitHub
+# release get. It holds the plugin code and the bundled SDK in vendor-prefixed/, which Strauss
+# builds again from the lock file. It holds no dev package, test or config file.
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+slug='gatepost-postcode-for-woocommerce'
+stage="$root/build/zip/$slug"
+
+cd "$root"
+rm -rf "$root/build/zip" "$root/dist" vendor-prefixed
+vendor/bin/strauss > /dev/null
+mkdir -p "$stage" "$root/dist"
+cp -R "$slug.php" uninstall.php readme.txt LICENSE LICENSES NOTICE src vendor-prefixed "$stage/"
+(cd "$root/build/zip" && zip -qrX "$root/dist/$slug.zip" "$slug")
+echo "Built dist/$slug.zip."

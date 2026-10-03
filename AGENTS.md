@@ -23,6 +23,7 @@ This repo is part of Gatepost, unofficial open-source developer tools for Nigeri
 
 1. A failing test came first, and it passes now.
 2. `composer check` passes. It runs the formatter, linters, tests, coverage and `check-tells`.
-3. Each user-visible change has a change file.
-4. Each new domain term is in `CONTEXT.md`.
-5. The diff touches only the lines that the task needs.
+3. `corepack pnpm test:e2e` passes for a change that a shopper or a store owner can see. It builds the zip, installs it in a shop in `build/e2e` and drives both checkouts in Chromium.
+4. Each user-visible change has a change file.
+5. Each new domain term is in `CONTEXT.md`.
+6. The diff touches only the lines that the task needs.

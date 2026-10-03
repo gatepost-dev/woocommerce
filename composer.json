@@ -89,7 +89,10 @@
             "@tells"
         ],
         "context:check": "cmp CONTEXT.md spec/CONTEXT.md",
-        "deps:licences": "@php scripts/check-licences.php",
+        "deps:licences": [
+            "corepack pnpm licenses list --json > build/pnpm-licences.json",
+            "@php scripts/check-licences.php composer.lock NOTICE build/pnpm-licences.json"
+        ],
         "licences": "uvx --with charset-normalizer==3.5.2 reuse@6.2.0 lint",
         "lint": "phpcs",
         "lint:fix": "phpcbf",

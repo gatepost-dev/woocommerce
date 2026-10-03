@@ -1,0 +1,65 @@
+=== Gatepost Postcode for WooCommerce ===
+Contributors: gatepostdev
+Tags: postcode, nigeria, checkout, address, validation
+Requires at least: 6.7
+Tested up to: 7.1
+Requires PHP: 8.1
+Requires Plugins: woocommerce
+Stable tag: 0.1.0
+License: Apache-2.0
+License URI: https://www.apache.org/licenses/LICENSE-2.0
+
+Unofficial. Not made or endorsed by NIPOST. Checks Nigeria's new 11-character postcodes at checkout.
+
+== Description ==
+
+Unofficial. Not made or endorsed by NIPOST.
+
+Nigeria's digital postcodes have 11 characters, such as FC-01-Z99-ZZ-01. WooCommerce hides the postcode field for Nigeria. This plugin adds a postcode field to Nigerian addresses in the classic checkout and in the checkout block.
+
+* The field shows only when the address is in Nigeria.
+* The plugin checks the format while the customer fills in the form. It names the problem and suggests a fix for common typos, such as the letter O in place of a zero.
+* The plugin stores the postcode in its standard form, and copies it into the address of the order, so shipping plugins see it.
+* You choose whether the field is required, and whether the store accepts old 6-digit postcodes.
+* With your own live secret key from NIPOST, the store asks NIPOST whether each postcode exists, after the customer places the order. A failed lookup never stops an order: the plugin marks the order and leaves a note.
+* The orders list shows the postcode and the result of the check.
+
+The plugin works with order tables (HPOS) and with orders stored as posts.
+
+== Installation ==
+
+1. Install and activate WooCommerce 10.0 or later.
+2. This plugin is not on WordPress.org yet. Install its zip file from https://github.com/gatepost-dev/woocommerce with Plugins > Add New Plugin > Upload Plugin, and activate it.
+3. Go to WooCommerce > Settings > Advanced > Nigerian postcodes.
+4. Choose whether the field is required, and what to do with old 6-digit postcodes.
+5. To look up each postcode, enter a live secret key from NIPOST. It starts with nipost_live_. The plugin does not issue keys. You need your own key from NIPOST.
+
+== Frequently Asked Questions ==
+
+= Does the plugin need a key from NIPOST? =
+
+Not for the format check. Without a key, the plugin checks the format of each postcode on your server and sends nothing to NIPOST. The lookup needs a key from NIPOST, which the plugin does not issue.
+
+= What happens when NIPOST's service is slow or down? =
+
+The order goes ahead. The plugin waits at most 3 seconds, marks the order "Check failed" and leaves an order note that says why.
+
+= Can I use a test key? =
+
+No. NIPOST's test keys work only on its staging service, which this plugin does not use. Use a live secret key.
+
+== External services ==
+
+This plugin can connect to NIPOST's postcode gateway at https://api.postcode.gov.ng. It does so only when the store owner enters a live secret key and keeps the lookup setting on.
+
+* When: once for each postcode of a new order with a Nigerian address, after the customer places the order. The two addresses of an order share one lookup when they hold the same postcode.
+* What it sends: the postcode in its standard form, and the store's secret key. It sends no name, email address or other part of the address.
+* What it keeps: the postcode and the result of the check (valid, invalid, unchecked or error) as order meta. It keeps nothing else from the response.
+
+The Nigerian Postal Service (NIPOST) runs the gateway. Its terms of use: https://postcode.gov.ng/terms. Its acceptable use policy: https://postcode.gov.ng/acceptable-use. Read both before you enter a key.
+
+== Changelog ==
+
+= 0.1.0 =
+
+* First release.

@@ -1,0 +1,17 @@
+{
+  "name": "gatepost-woocommerce",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Browser tests of the plugin. The plugin itself ships no JavaScript.",
+  "engines": {
+    "node": "^22.22.2 || >=24.15.0"
+  },
+  "scripts": {
+    "test:e2e": "scripts/e2e-site && playwright test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.63.0"
+  },
+  "packageManager": "pnpm@12.8.1"
+}

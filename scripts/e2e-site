@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 The Gatepost authors
+# SPDX-License-Identifier: Apache-2.0
+# Builds the shop that the browser tests use, in build/e2e: a copy of the WordPress in build/wp,
+# so the must-use plugin that fakes NIPOST's gateway never reaches the PHPUnit tests. The shop
+# runs the zip that scripts/build-zip makes, as a store would. Run scripts/install-wp first.
+# Each run starts from a new copy and an empty database.
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+site="$root/build/e2e"
+wp() { php -d memory_limit=1G "$root/build/wp-cli.phar" --path="$site" --quiet "$@"; }
+
+if [ ! -d "$root/build/wp/wp-admin" ]; then
+  echo "WordPress is missing from build/wp. Run scripts/install-wp first." >&2
+  exit 1
+fi
+rm -rf "$site"
+cp -R "$root/build/wp/" "$site"
+# The copy gets the plugin from its zip, not from the link to the repo.
+rm "$site/wp-content/plugins/gatepost-postcode-for-woocommerce"
+# No cron and no update check, so the shop calls no host by itself.
+wp config create --dbname=e2e --dbuser=e2e --dbpass=e2e --skip-check --extra-php <<'PHP'
+define( 'DB_FILE', '.ht.e2e.sqlite' );
+define( 'DISABLE_WP_CRON', true );
+define( 'AUTOMATIC_UPDATER_DISABLED', true );
+PHP
+wp core install --url=http://127.0.0.1:8890 --title=Shop --admin_user=admin \
+  --admin_password=admin --admin_email=admin@example.com --skip-email
+# WP-CLI guesses the address from the folder name. The browser tests use the server's root.
+wp option update home http://127.0.0.1:8890
+wp option update siteurl http://127.0.0.1:8890
+
+"$root/scripts/build-zip"
+wp plugin install "$root/dist/gatepost-postcode-for-woocommerce.zip"
+wp plugin activate woocommerce gatepost-postcode-for-woocommerce
+# The option gatepost_e2e_gateway picks how the fake answers each request to the gateway.
+mkdir -p "$site/wp-content/mu-plugins"
+cat > "$site/wp-content/mu-plugins/gatepost-fake-gateway.php" <<PHP
+<?php
+require '$root/tests/Support/FakeGateway.php';
+( new Gatepost\\WooCommerce\\Tests\\Support\\FakeGateway(
+	(string) get_option( 'gatepost_e2e_gateway', 'fixtures' )
+) )->start();
+// WordPress asks its own servers for updates from the admin screens. The shop says none exist.
+foreach ( array( 'core', 'plugins', 'themes' ) as \$kind ) {
+	add_filter(
+		'pre_site_transient_update_' . \$kind,
+		static fn () => (object) array(
+			'last_checked'    => time(),
+			'version_checked' => get_bloginfo( 'version' ),
+			'updates'         => array(),
+		)
+	);
+}
+// The fake answers the gateway. The shop refuses each other request, and keeps the host in the
+// option gatepost_e2e_blocked, so a test fails when the plugin or WordPress calls out.
+add_filter(
+	'pre_http_request',
+	static function ( \$preempt, \$args, \$url ) {
+		\$host = (string) wp_parse_url( \$url, PHP_URL_HOST );
+		if ( false !== \$preempt || '127.0.0.1' === \$host ) {
+			return \$preempt;
+		}
+		\$blocked   = (array) get_option( 'gatepost_e2e_blocked', array() );
+		\$blocked[] = \$host;
+		update_option( 'gatepost_e2e_blocked', array_values( array_unique( \$blocked ) ), false );
+		return new WP_Error( 'gatepost_e2e_blocked', 'The tests allow no call to ' . \$host );
+	},
+	20,
+	3
+);
+PHP
+
+wp option update woocommerce_coming_soon no
+# WordPress and WooCommerce call their own hosts from the admin screens. The shop turns off
+# what it can, so the only call a test may see is the one to the fake gateway.
+wp option update show_avatars 0
+# The first visit to the admin would send a person to the setup wizard of WooCommerce.
+wp transient delete _wc_activation_redirect
+wp option update woocommerce_onboarding_profile --format=json '{"skipped":true}'
+wp option update woocommerce_allow_tracking no
+wp option update woocommerce_show_marketplace_suggestions no
+wp option update woocommerce_merchant_email_notifications no
+wp option update woocommerce_currency NGN
+wp option update woocommerce_default_country NG:FC
+# Both order stores stay in sync, so a test can switch between them.
+wp option update woocommerce_custom_orders_table_data_sync_enabled yes
+wp option update woocommerce_cod_settings --format=json \
+  '{"enabled":"yes","title":"Cash on delivery"}'
+wp eval '$zone = new WC_Shipping_Zone( 0 );
+  $zone->add_shipping_method( "flat_rate" );
+  $zone->save();'
+wp post create --post_type=page --post_status=publish --post_title='Classic checkout' \
+  --post_name=classic-checkout --post_content='[woocommerce_checkout]'
+wp wc product create --name=Book --regular_price=1000 --user=admin
+echo "The shop for the browser tests is ready in build/e2e."
