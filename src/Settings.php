@@ -8,6 +8,8 @@
 
 namespace Gatepost\WooCommerce;
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * The store's choices, read from the plugin's options.
  */

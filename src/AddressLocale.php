@@ -8,6 +8,8 @@
 
 namespace Gatepost\WooCommerce;
 
+defined( 'ABSPATH' ) || exit;
+
 use Throwable;
 
 /**

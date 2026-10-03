@@ -8,6 +8,8 @@
 
 namespace Gatepost\WooCommerce;
 
+defined( 'ABSPATH' ) || exit;
+
 use WC_Admin_Settings;
 
 /**
@@ -186,6 +188,7 @@ final class SettingsPage {
 			),
 			__( 'A failed lookup never stops an order.', 'gatepost-postcode-for-woocommerce' ),
 		);
+		// The text is three whole sentences. A translation may join them in another way.
 		return implode( ' ', $sentences );
 	}
 

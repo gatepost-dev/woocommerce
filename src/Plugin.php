@@ -8,6 +8,8 @@
 
 namespace Gatepost\WooCommerce;
 
+defined( 'ABSPATH' ) || exit;
+
 use Gatepost\WooCommerce\Vendor\Gatepost\Postcode\Client\PostcodeClient;
 use Gatepost\WooCommerce\Vendor\Nyholm\Psr7\Factory\Psr17Factory;
 

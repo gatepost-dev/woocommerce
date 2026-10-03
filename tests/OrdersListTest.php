@@ -87,7 +87,7 @@ final class OrdersListTest extends WP_UnitTestCase {
 		);
 	}
 
-	public function test_shows_the_shipping_postcode_and_its_status_with_order_tables(): void {
+	public function test_shows_both_postcodes_and_the_status_with_order_tables(): void {
 		self::use_order_tables( true );
 		$order = self::checked_order( 'valid' );
 		$store = $order->get_data_store()->get_current_class_name();
@@ -98,10 +98,13 @@ final class OrdersListTest extends WP_UnitTestCase {
 				do_action( $hook, 'gatepost_postcode', $order );
 			}
 		);
-		$this->assertSame( 'FC-01-Z99-ZZ-01<br>Checked', $cell );
+		$this->assertSame(
+			'Billing: FC-01-Z99-ZZ-02<br>Shipping: FC-01-Z99-ZZ-01<br>Checked',
+			$cell
+		);
 	}
 
-	public function test_shows_the_shipping_postcode_and_its_status_with_posts_storage(): void {
+	public function test_shows_both_postcodes_and_the_status_with_posts_storage(): void {
 		self::use_order_tables( false );
 		$order = self::checked_order( 'error' );
 		$store = $order->get_data_store()->get_current_class_name();
@@ -112,7 +115,10 @@ final class OrdersListTest extends WP_UnitTestCase {
 				do_action( $hook, 'gatepost_postcode', $order->get_id() );
 			}
 		);
-		$this->assertSame( 'FC-01-Z99-ZZ-01<br>Check failed', $cell );
+		$this->assertSame(
+			'Billing: FC-01-Z99-ZZ-02<br>Shipping: FC-01-Z99-ZZ-01<br>Check failed',
+			$cell
+		);
 	}
 
 	public function test_prints_nothing_in_other_columns_or_for_unchecked_orders(): void {
@@ -175,6 +181,34 @@ final class OrdersListTest extends WP_UnitTestCase {
 		$cell = self::printed(
 			static function () {
 				OrdersList::show_post( OrdersList::COLUMN, 0 );
+			}
+		);
+		$this->assertSame( '', $cell );
+	}
+
+	public function test_shows_one_postcode_when_both_addresses_share_it(): void {
+		$order = self::checked_order( 'valid' );
+		$order->update_meta_data( '_gatepost_billing_postcode', 'FC-01-Z99-ZZ-01' );
+		$this->assertSame( 'FC-01-Z99-ZZ-01<br>Checked', OrdersList::cell( $order ) );
+	}
+
+	public function test_shows_the_postcode_that_staff_typed_into_the_order(): void {
+		$order = self::checked_order( 'valid' );
+		$order->delete_meta_data( '_gatepost_shipping_postcode' );
+		$order->set_billing_postcode( 'FC-01-Z99-ZZ-09' );
+		$this->assertSame(
+			'FC-01-Z99-ZZ-09<br>Changed after the check',
+			OrdersList::cell( $order )
+		);
+		$order->set_billing_postcode( 'FC-01-Z99-ZZ-02' );
+		$this->assertSame( 'FC-01-Z99-ZZ-02<br>Checked', OrdersList::cell( $order ) );
+	}
+
+	public function test_ignores_a_hook_call_that_does_not_hold_an_order(): void {
+		$cell = self::printed(
+			static function () {
+				OrdersList::show_order( OrdersList::COLUMN, 12 );
+				OrdersList::show_post( OrdersList::COLUMN, '0' );
 			}
 		);
 		$this->assertSame( '', $cell );

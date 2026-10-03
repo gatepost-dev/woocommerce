@@ -8,6 +8,8 @@
 
 namespace Gatepost\WooCommerce;
 
+defined( 'ABSPATH' ) || exit;
+
 use Gatepost\WooCommerce\Vendor\Gatepost\Postcode\Client\ErrorCode;
 
 /**
@@ -69,6 +71,7 @@ final class Notes {
 			'The order went ahead. Check the postcode by hand.',
 			'gatepost-postcode-for-woocommerce'
 		);
+		// The note is three whole sentences. A translation may join them in another way.
 		return sprintf( $note, $redacted ) . ' ' . self::reason( $error ) . ' ' . $outcome;
 	}
 
@@ -101,6 +104,7 @@ final class Notes {
 			'gatepost-postcode-for-woocommerce'
 		);
 		$where   = __( 'The WooCommerce log has details.', 'gatepost-postcode-for-woocommerce' );
+		// The note is four whole sentences. A translation may join them in another way.
 		return sprintf( $note, $redacted ) . ' ' . $cause . ' ' . $outcome . ' ' . $where;
 	}
 

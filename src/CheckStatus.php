@@ -8,6 +8,8 @@
 
 namespace Gatepost\WooCommerce;
 
+defined( 'ABSPATH' ) || exit;
+
 /**
  * What the plugin learned about a postcode. The value is the one that the order meta
  * `_gatepost_postcode_check` holds.

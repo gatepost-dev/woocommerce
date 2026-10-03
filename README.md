@@ -42,11 +42,11 @@ A customer with a Nigerian address now sees a Postcode field in both checkouts. 
 
 ## Support
 
-Ask questions in GitHub Discussions. Report bugs in GitHub Issues. Report security problems privately, as `SECURITY.md` describes.
+Ask questions and report bugs in [GitHub Issues](https://github.com/gatepost-dev/woocommerce/issues). Report security problems privately, as the [security policy](https://github.com/gatepost-dev/.github/blob/main/SECURITY.md) describes.
 
 ## Contributing
 
-Read `CONTRIBUTING.md` before you open a pull request. Run `scripts/install-wp`, `composer check` and `corepack pnpm test:e2e`. None of them needs Docker.
+Read the [contributing guide](https://github.com/gatepost-dev/.github/blob/main/CONTRIBUTING.md) before you open a pull request. Run `scripts/install-wp`, `composer check` and `corepack pnpm test:e2e`. None of them needs Docker.
 
 ## Licence
 

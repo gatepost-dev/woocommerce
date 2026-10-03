@@ -8,6 +8,8 @@
 
 namespace Gatepost\WooCommerce;
 
+defined( 'ABSPATH' ) || exit;
+
 use Throwable;
 use WC_Order;
 
@@ -54,11 +56,12 @@ final class OrdersList {
 	/**
 	 * Prints the cell in the list of order tables.
 	 *
-	 * @param string   $column The column id.
-	 * @param WC_Order $order  The order of the row.
+	 * @param mixed $column The column id.
+	 * @param mixed $order  The order of the row. Another plugin that fires the hook can pass
+	 *                      anything.
 	 */
-	public static function show_order( string $column, WC_Order $order ): void {
-		if ( self::COLUMN === $column ) {
+	public static function show_order( $column, $order ): void {
+		if ( self::COLUMN === $column && $order instanceof WC_Order ) {
 			self::print_cell( $order );
 		}
 	}
@@ -66,15 +69,15 @@ final class OrdersList {
 	/**
 	 * Prints the cell in the list of orders stored as posts.
 	 *
-	 * @param string $column  The column id.
-	 * @param int    $post_id The order id.
+	 * @param mixed $column  The column id.
+	 * @param mixed $post_id The order id.
 	 */
-	public static function show_post( string $column, int $post_id ): void {
+	public static function show_post( $column, $post_id ): void {
 		if ( self::COLUMN !== $column ) {
 			return;
 		}
 		try {
-			$order = wc_get_order( $post_id );
+			$order = wc_get_order( is_numeric( $post_id ) ? (int) $post_id : 0 );
 		} catch ( Throwable $failure ) {
 			self::log( $failure );
 			return;
@@ -110,21 +113,56 @@ final class OrdersList {
 	}
 
 	/**
-	 * Gives the shipping postcode, or else the billing postcode, and the check status. The cell
+	 * Gives the postcodes of the order and the check status. Two different postcodes each get a
+	 * line with the address. When staff changed the postcode of the order after the check, the
+	 * cell shows the new postcode and says so, because the check was about the old one. The cell
 	 * is empty for an order without a checked postcode.
 	 *
 	 * @param WC_Order $order The order of the row.
 	 */
 	public static function cell( WC_Order $order ): string {
-		$postcode = (string) $order->get_meta( OrderPostcodes::meta_key( 'shipping' ) );
-		if ( '' === $postcode ) {
-			$postcode = (string) $order->get_meta( OrderPostcodes::meta_key( 'billing' ) );
-		}
 		$status = CheckStatus::tryFrom( (string) $order->get_meta( OrderPostcodes::CHECK_META ) );
-		if ( '' === $postcode || null === $status ) {
+		$shown  = array();
+		$edited = false;
+		foreach ( OrderPostcodes::GROUPS as $group ) {
+			$stored = (string) $order->get_meta( OrderPostcodes::meta_key( $group ) );
+			if ( '' === $stored ) {
+				continue;
+			}
+			$native          = 'billing' === $group
+				? $order->get_billing_postcode()
+				: $order->get_shipping_postcode();
+			$edited          = $edited || ( '' !== $native && $native !== $stored );
+			$shown[ $group ] = '' !== $native ? $native : $stored;
+		}
+		if ( array() === $shown || null === $status ) {
 			return '';
 		}
-		return esc_html( $postcode ) . '<br>' . esc_html( self::label( $status ) );
+		$label = $edited
+			? __( 'Changed after the check', 'gatepost-postcode-for-woocommerce' )
+			: self::label( $status );
+		$lines = array_map( 'esc_html', self::lines( $shown ) );
+		return implode( '<br>', $lines ) . '<br>' . esc_html( $label );
+	}
+
+	/**
+	 * Gives the postcode lines of the cell. One postcode, or two equal ones, give one line.
+	 *
+	 * @param array<string, string> $shown The postcode of each address.
+	 * @return array<int, string>
+	 */
+	private static function lines( array $shown ): array {
+		if ( 1 === count( array_unique( $shown ) ) ) {
+			return array( array_values( $shown )[0] );
+		}
+		/* translators: %s: the billing postcode of the order. */
+		$billing = __( 'Billing: %s', 'gatepost-postcode-for-woocommerce' );
+		/* translators: %s: the shipping postcode of the order. */
+		$shipping = __( 'Shipping: %s', 'gatepost-postcode-for-woocommerce' );
+		return array(
+			sprintf( $billing, $shown['billing'] ),
+			sprintf( $shipping, $shown['shipping'] ),
+		);
 	}
 
 	/**

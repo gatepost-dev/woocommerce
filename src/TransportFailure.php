@@ -8,6 +8,8 @@
 
 namespace Gatepost\WooCommerce;
 
+defined( 'ABSPATH' ) || exit;
+
 use Gatepost\WooCommerce\Vendor\Psr\Http\Client\NetworkExceptionInterface;
 use Gatepost\WooCommerce\Vendor\Psr\Http\Message\RequestInterface;
 use RuntimeException;
