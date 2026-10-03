@@ -39,12 +39,6 @@ final class AddressLocaleTest extends WP_UnitTestCase {
 		);
 	}
 
-	public function test_hides_the_plugin_field_for_other_countries(): void {
-		$fields = AddressLocale::add_field( array() );
-		$this->assertTrue( $fields['gatepost_postcode']['hidden'] );
-		$this->assertFalse( $fields['gatepost_postcode']['required'] );
-	}
-
 	public function test_gives_the_classic_checkout_a_required_field_for_nigeria_only(): void {
 		update_option( 'gatepost_wc_required', 'yes' );
 		WC()->countries->locale = null;

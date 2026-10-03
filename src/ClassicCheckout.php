@@ -54,42 +54,70 @@ final class ClassicCheckout {
 					$errors->add( $key . '_validation', $problem, array( 'id' => $key ) );
 				}
 			}
-		} catch ( Throwable ) {
+		} catch ( Throwable $failure ) {
 			// A failure of the plugin never stops an order. Only a wrong format does.
-			return;
+			OrderPostcodes::warn(
+				'The plugin could not check the format of a postcode. It failed with '
+					. $failure::class . '.'
+			);
 		}
 	}
 
 	/**
-	 * Checks the postcodes of the new order. WooCommerce saved each field as order meta, so this
-	 * reads that meta, then removes it: the plugin's own meta keys hold the postcodes.
+	 * Checks the postcodes of the new order. WooCommerce saved each field as order meta. This
+	 * reads that meta, and removes it only for an address whose postcode the plugin stored under
+	 * its own key. On any failure, the typed text stays as the native postcode of the address.
 	 *
 	 * @param WC_Order $order The new order.
 	 */
 	public static function record( WC_Order $order ): void {
+		$typed = array();
 		try {
-			$typed = array();
 			foreach ( array( 'billing', 'shipping' ) as $group ) {
-				$meta_key        = '_' . $group . '_' . AddressLocale::FIELD;
-				$typed[ $group ] = (string) $order->get_meta( $meta_key );
-				$order->delete_meta_data( $meta_key );
+				$typed[ $group ] = (string) $order->get_meta( self::meta_key( $group ) );
 			}
 			( new OrderPostcodes( Plugin::checker() ) )->record( $order, $typed );
+			OrderPostcodes::keep_typed( $order, $typed );
+			foreach ( array( 'billing', 'shipping' ) as $group ) {
+				if ( '' !== (string) $order->get_meta( OrderPostcodes::meta_key( $group ) ) ) {
+					$order->delete_meta_data( self::meta_key( $group ) );
+				}
+			}
 			$order->save();
 		} catch ( Throwable $failure ) {
 			// Nothing here may stop an order or break the thank-you page.
-			try {
-				wc_get_logger()->warning(
-					sprintf(
-						'Order %d: the plugin could not check the postcodes. It failed with %s.',
-						$order->get_id(),
-						$failure::class
-					),
-					array( 'source' => 'gatepost' )
-				);
-			} catch ( Throwable ) {
-				return;
-			}
+			OrderPostcodes::warn(
+				sprintf(
+					'Order %d: the plugin could not check the postcodes. It failed with %s.',
+					$order->get_id(),
+					$failure::class
+				)
+			);
+			self::save_typed( $order, $typed );
+		}
+	}
+
+	/**
+	 * Gives the meta key where WooCommerce saves a classic field.
+	 *
+	 * @param string $group The address: billing or shipping.
+	 */
+	private static function meta_key( string $group ): string {
+		return '_' . $group . '_' . AddressLocale::FIELD;
+	}
+
+	/**
+	 * Keeps the typed text after a failure, and saves the order. It never throws.
+	 *
+	 * @param WC_Order              $order The new order.
+	 * @param array<string, string> $typed The text of each postcode field.
+	 */
+	private static function save_typed( WC_Order $order, array $typed ): void {
+		OrderPostcodes::keep_typed_safely( $order, $typed );
+		try {
+			$order->save();
+		} catch ( Throwable ) {
+			return;
 		}
 	}
 }

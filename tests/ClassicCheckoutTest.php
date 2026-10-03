@@ -10,6 +10,7 @@ namespace Gatepost\WooCommerce\Tests;
 
 use Gatepost\WooCommerce\ClassicCheckout;
 use Gatepost\WooCommerce\Settings;
+use Gatepost\WooCommerce\Tests\Support\CapturedLog;
 use Gatepost\WooCommerce\Tests\Support\FakeGateway;
 use Gatepost\WooCommerce\Tests\Support\Shop;
 use RuntimeException;
@@ -21,6 +22,36 @@ use WP_UnitTestCase;
  * The classic checkout: its validation, and the order that WooCommerce creates from the form.
  */
 final class ClassicCheckoutTest extends WP_UnitTestCase {
+
+	public function tear_down(): void {
+		CapturedLog::restore();
+		parent::tear_down();
+	}
+
+	/**
+	 * Gives a saved Nigerian order whose typed postcode is in WooCommerce's classic meta.
+	 *
+	 * @param string   $typed The text of the billing field.
+	 * @param WC_Order $order The order to fill, or a new one.
+	 */
+	private static function typed_order( string $typed, ?WC_Order $order = null ): WC_Order {
+		$order = $order ?? wc_create_order();
+		$order->set_billing_country( 'NG' );
+		$order->update_meta_data( '_billing_gatepost_postcode', $typed );
+		$order->save();
+		return $order;
+	}
+
+	/**
+	 * Gives the order again as the database holds it.
+	 *
+	 * @param WC_Order $order The order.
+	 */
+	private static function reloaded( WC_Order $order ): WC_Order {
+		$fresh = wc_get_order( $order->get_id() );
+		self::assertInstanceOf( WC_Order::class, $fresh );
+		return $fresh;
+	}
 
 	/**
 	 * Gives the posted form of a Nigerian customer, as WooCommerce cleans it.
@@ -143,11 +174,9 @@ final class ClassicCheckoutTest extends WP_UnitTestCase {
 		$this->assertSame( array(), self::errors_of( $form ) );
 	}
 
-	public function test_places_the_order_when_the_settings_break_after_it(): void {
-		$order = wc_create_order();
-		$order->set_billing_country( 'NG' );
-		$order->update_meta_data( '_billing_gatepost_postcode', 'FC-01-Z99-ZZ-01' );
-		$order->save();
+	public function test_keeps_the_typed_postcode_when_the_checker_cannot_be_built(): void {
+		$log   = CapturedLog::install();
+		$order = self::typed_order( 'FC-01-Z99-ZZ-01' );
 		add_filter(
 			'pre_option_' . Settings::LEGACY,
 			static function () {
@@ -155,6 +184,92 @@ final class ClassicCheckoutTest extends WP_UnitTestCase {
 			}
 		);
 		ClassicCheckout::record( $order );
-		$this->assertSame( '', $order->get_meta( '_gatepost_postcode_check' ) );
+		$saved = self::reloaded( $order );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $saved->get_billing_postcode() );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $saved->get_meta( '_billing_gatepost_postcode' ) );
+		$this->assertSame( 'unchecked', $saved->get_meta( '_gatepost_postcode_check' ) );
+		$this->assertSame(
+			array(
+				'Order ' . $order->get_id() . ': the plugin could not check the postcodes.'
+					. ' It failed with RuntimeException.',
+			),
+			$log->messages
+		);
+	}
+
+	public function test_keeps_the_typed_postcode_when_storing_the_first_address_fails(): void {
+		$log   = CapturedLog::install();
+		$order = self::typed_order(
+			'FC-01-Z99-ZZ-01',
+			new class() extends WC_Order {
+				/**
+				 * Fails for the plugin's own postcode key.
+				 *
+				 * @param string $key   The meta key.
+				 * @param mixed  $value The value.
+				 * @param int    $id    The meta id.
+				 * @throws RuntimeException For the billing key of the plugin.
+				 */
+				public function update_meta_data( $key, $value, $id = 0 ) {
+					if ( '_gatepost_billing_postcode' === $key ) {
+						throw new RuntimeException( 'meta broke' );
+					}
+					parent::update_meta_data( $key, $value, $id );
+				}
+			}
+		);
+		ClassicCheckout::record( $order );
+		$saved = self::reloaded( $order );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $saved->get_billing_postcode() );
+		$this->assertSame( 'unchecked', $saved->get_meta( '_gatepost_postcode_check' ) );
+		$this->assertCount( 1, $log->messages );
+		$this->assertStringContainsString( 'RuntimeException', $log->messages[0] );
+	}
+
+	public function test_keeps_a_typed_postcode_that_has_the_wrong_format(): void {
+		$order = self::typed_order( 'EKO1A03FK01' );
+		ClassicCheckout::record( $order );
+		$saved = self::reloaded( $order );
+		$this->assertSame( 'EKO1A03FK01', $saved->get_billing_postcode() );
+		$this->assertSame( '', $saved->get_meta( '_gatepost_billing_postcode' ) );
+		$this->assertSame( 'unchecked', $saved->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_removes_the_woocommerce_meta_after_the_plugin_stored_the_postcode(): void {
+		$order = self::typed_order( 'fc01z99zz01' );
+		ClassicCheckout::record( $order );
+		$saved = self::reloaded( $order );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $saved->get_meta( '_gatepost_billing_postcode' ) );
+		$this->assertSame( '', $saved->get_meta( '_billing_gatepost_postcode' ) );
+	}
+
+	public function test_accepts_and_stores_an_old_postcode_by_default(): void {
+		$this->assertSame(
+			array(),
+			self::errors_of( self::form( array( 'billing_gatepost_postcode' => '900 108' ) ) )
+		);
+		$order = self::typed_order( '900 108' );
+		ClassicCheckout::record( $order );
+		$saved = self::reloaded( $order );
+		$this->assertSame( '900108', $saved->get_meta( '_gatepost_billing_postcode' ) );
+		$this->assertSame( 'unchecked', $saved->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_logs_the_class_when_the_settings_break_at_validation(): void {
+		$log = CapturedLog::install();
+		add_filter(
+			'pre_option_' . Settings::LEGACY,
+			static function () {
+				throw new RuntimeException( 'options broke' );
+			}
+		);
+		self::errors_of( self::form( array( 'billing_gatepost_postcode' => 'EKO1A03FK01' ) ) );
+		$this->assertSame(
+			array(
+				'The plugin could not check the format of a postcode.'
+					. ' It failed with RuntimeException.',
+			),
+			$log->messages
+		);
 	}
 }

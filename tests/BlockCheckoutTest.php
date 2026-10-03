@@ -14,6 +14,7 @@ use Gatepost\WooCommerce\BlockCheckout;
 use Gatepost\WooCommerce\Settings;
 use Gatepost\WooCommerce\Tests\Support\FakeGateway;
 use Gatepost\WooCommerce\Tests\Support\Shop;
+use Gatepost\WooCommerce\Tests\Support\CapturedLog;
 use Gatepost\WooCommerce\Tests\Support\StoreApiCheckout;
 use RuntimeException;
 use WC_Order;
@@ -34,6 +35,7 @@ final class BlockCheckoutTest extends WP_UnitTestCase {
 		remove_all_filters( 'pre_option_' . Settings::LEGACY );
 		delete_option( Settings::REQUIRED );
 		self::register_field_again();
+		CapturedLog::restore();
 		parent::tear_down();
 	}
 
@@ -221,5 +223,21 @@ final class BlockCheckoutTest extends WP_UnitTestCase {
 		self::break_the_settings();
 		BlockCheckout::record( $order );
 		$this->assertSame( '', $order->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_keeps_the_typed_postcode_when_the_checker_cannot_be_built(): void {
+		$log   = CapturedLog::install();
+		$order = wc_create_order();
+		$order->set_billing_country( 'NG' );
+		$order->update_meta_data( '_wc_billing/gatepost/postcode', 'FC-01-Z99-ZZ-01' );
+		$order->save();
+		self::break_the_settings();
+		BlockCheckout::record( $order );
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $saved );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $saved->get_billing_postcode() );
+		$this->assertSame( 'unchecked', $saved->get_meta( '_gatepost_postcode_check' ) );
+		$this->assertCount( 1, $log->messages );
+		$this->assertStringContainsString( 'RuntimeException', $log->messages[0] );
 	}
 }

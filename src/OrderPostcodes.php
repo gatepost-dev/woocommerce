@@ -49,13 +49,28 @@ final class OrderPostcodes {
 			$this->store( $order, $typed );
 		} catch ( Throwable $failure ) {
 			// Nothing here may stop an order or break the thank-you page.
-			$this->log(
+			self::warn(
 				sprintf(
 					'Order %d: the plugin could not store the postcodes. It failed with %s.',
 					$order->get_id(),
 					$failure::class
 				)
 			);
+			self::keep_typed_safely( $order, $typed );
+		}
+	}
+
+	/**
+	 * Calls keep_typed() and never throws.
+	 *
+	 * @param WC_Order              $order The new order.
+	 * @param array<string, string> $typed The text of each postcode field, by address.
+	 */
+	public static function keep_typed_safely( WC_Order $order, array $typed ): void {
+		try {
+			self::keep_typed( $order, $typed );
+		} catch ( Throwable ) {
+			return;
 		}
 	}
 
@@ -126,7 +141,7 @@ final class OrderPostcodes {
 			return;
 		}
 		if ( $fresh ) {
-			$this->log(
+			self::warn(
 				sprintf(
 					'Order %d: the %s postcode %s was not checked. %s',
 					$order->get_id(),
@@ -139,11 +154,45 @@ final class OrderPostcodes {
 	}
 
 	/**
+	 * Keeps the postcodes that the plugin did not store, as the customer typed them. A Nigerian
+	 * address that has no plugin postcode, or no native postcode, gets the typed text as its
+	 * native postcode, and the order gets the status unchecked. The caller saves the order.
+	 *
+	 * @param WC_Order              $order The new order.
+	 * @param array<string, string> $typed The text of each postcode field, by address.
+	 */
+	public static function keep_typed( WC_Order $order, array $typed ): void {
+		$kept = false;
+		foreach ( array( 'billing', 'shipping' ) as $group ) {
+			$text = trim( $typed[ $group ] ?? '' );
+			if ( '' === $text ) {
+				continue;
+			}
+			$billing = 'billing' === $group;
+			$country = $billing ? $order->get_billing_country() : $order->get_shipping_country();
+			$native  = $billing ? $order->get_billing_postcode() : $order->get_shipping_postcode();
+			$stored  = (string) $order->get_meta( self::meta_key( $group ) );
+			if ( 'NG' !== $country || ( '' !== $stored && '' !== $native ) ) {
+				continue;
+			}
+			if ( $billing ) {
+				$order->set_billing_postcode( $text );
+			} else {
+				$order->set_shipping_postcode( $text );
+			}
+			$kept = true;
+		}
+		if ( $kept ) {
+			$order->update_meta_data( self::CHECK_META, CheckStatus::Unchecked->value );
+		}
+	}
+
+	/**
 	 * Writes one warning to the WooCommerce log. A broken log never stops the order.
 	 *
 	 * @param string $message The line. It holds no key and no full postcode.
 	 */
-	private function log( string $message ): void {
+	public static function warn( string $message ): void {
 		try {
 			wc_get_logger()->warning( $message, array( 'source' => 'gatepost' ) );
 		} catch ( Throwable ) {

@@ -102,31 +102,34 @@ final class BlockCheckout {
 	}
 
 	/**
-	 * Checks the postcodes of the new order, and saves it.
+	 * Checks the postcodes of the new order, and saves it. On any failure, the typed text stays
+	 * as the native postcode of the address.
 	 *
 	 * @param WC_Order $order The order that the checkout block created.
 	 */
 	public static function record( WC_Order $order ): void {
+		$typed = array();
 		try {
 			$fields = Package::container()->get( CheckoutFields::class );
-			$typed  = array();
 			foreach ( array( 'billing', 'shipping' ) as $group ) {
 				$text            = $fields->get_field_from_object( self::FIELD, $order, $group );
 				$typed[ $group ] = (string) $text;
 			}
 			( new OrderPostcodes( Plugin::checker() ) )->record( $order, $typed );
+			OrderPostcodes::keep_typed( $order, $typed );
 			$order->save();
 		} catch ( Throwable $failure ) {
 			// Nothing here may stop an order or break the thank-you page.
+			OrderPostcodes::warn(
+				sprintf(
+					'Order %d: the plugin could not check the postcodes. It failed with %s.',
+					$order->get_id(),
+					$failure::class
+				)
+			);
+			OrderPostcodes::keep_typed_safely( $order, $typed );
 			try {
-				wc_get_logger()->warning(
-					sprintf(
-						'Order %d: the plugin could not check the postcodes. It failed with %s.',
-						$order->get_id(),
-						$failure::class
-					),
-					array( 'source' => 'gatepost' )
-				);
+				$order->save();
 			} catch ( Throwable ) {
 				return;
 			}
