@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 The Gatepost authors
+# SPDX-License-Identifier: Apache-2.0
+# Runs WordPress.org's Plugin Check on dist/gatepost-postcode-for-woocommerce.zip, in a new copy of
+# the WordPress in build/wp. It fails when Plugin Check reports an error (WP-5). It prints the
+# warnings, so a person can read them. Run scripts/install-wp and scripts/build-zip first.
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+slug='gatepost-postcode-for-woocommerce'
+site="$root/build/plugin-check"
+wp() { php -d memory_limit=1G "$root/build/wp-cli.phar" --path="$site" --quiet "$@"; }
+
+rm -rf "$site"
+cp -R "$root/build/wp/" "$site"
+# The copy gets the plugin from its zip, not from the link to the repo.
+rm "$site/wp-content/plugins/gatepost-postcode-for-woocommerce"
+wp config create --dbname=check --dbuser=check --dbpass=check --skip-check \
+  --extra-php <<< "define( 'DB_FILE', '.ht.check.sqlite' );"
+wp core install --url=http://127.0.0.1 --title=Check --admin_user=admin \
+  --admin_password=admin --admin_email=admin@example.com --skip-email
+wp plugin install "$root/build/plugin-check.zip" "$root/dist/$slug.zip"
+wp plugin activate woocommerce plugin-check "$slug"
+
+report="$root/build/plugin-check.csv"
+php -d memory_limit=1G "$root/build/wp-cli.phar" --path="$site" plugin check "$slug" \
+  --format=csv --fields=file,line,type,code,message > "$report" || true
+cat "$report"
+if grep -q ',ERROR,' "$report"; then
+  echo 'Plugin Check reports at least one error.' >&2
+  exit 1
+fi
+echo 'Plugin Check reports no errors.'

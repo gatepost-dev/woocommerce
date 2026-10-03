@@ -56,7 +56,7 @@ This plugin can connect to NIPOST's postcode gateway at https://api.postcode.gov
 * What it sends: the postcode in its standard form, and the store's secret key. It sends no name, email address or other part of the address.
 * What it keeps: the postcode and the result of the check (valid, invalid, unchecked or error) as order meta. It keeps nothing else from the response.
 
-The Nigerian Postal Service (NIPOST) runs the gateway. Its terms of use: https://postcode.gov.ng/terms. Its acceptable use policy: https://postcode.gov.ng/acceptable-use. Read both before you enter a key.
+The Nigerian Postal Service (NIPOST) runs the gateway. Its terms of use: https://postcode.gov.ng/terms. Its acceptable use policy: https://postcode.gov.ng/acceptable-use. Its privacy policy: https://postcode.gov.ng/privacy. Read all three before you enter a key.
 
 == Changelog ==
 

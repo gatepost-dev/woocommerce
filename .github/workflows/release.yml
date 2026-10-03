@@ -1,0 +1,68 @@
+# SPDX-FileCopyrightText: 2026 The Gatepost authors
+# SPDX-License-Identifier: Apache-2.0
+name: release
+
+# A version tag such as v0.1.0 builds the zip, checks it with Plugin Check, and attaches it to a
+# draft GitHub release with a provenance attestation. A person runs the same steps by hand for an
+# existing tag. Nothing here publishes the draft or sends the plugin to WordPress.org.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The existing version tag to build, such as v0.1.0.
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  zip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          submodules: true
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - run: scripts/install-wp
+      - run: scripts/build-zip
+      - run: scripts/plugin-check
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/gatepost-postcode-for-woocommerce.zip
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gatepost-postcode-for-woocommerce
+          path: dist/gatepost-postcode-for-woocommerce.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: zip
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: gatepost-postcode-for-woocommerce
+      - name: Attach the zip to a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$TAG" gatepost-postcode-for-woocommerce.zip \
+            --draft --verify-tag --title "$TAG" --repo "$GITHUB_REPOSITORY"
