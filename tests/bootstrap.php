@@ -48,4 +48,22 @@ tests_add_filter(
 	}
 );
 
+// A test that reaches NIPOST's gateway without a FakeGateway fails, and no test reaches any other
+// host. WooCommerce asks a few hosts for data in the background.
+tests_add_filter(
+	'pre_http_request',
+	static function ( $preempt, $args, $url ) {
+		if ( false !== $preempt ) {
+			return $preempt;
+		}
+		$host = wp_parse_url( $url, PHP_URL_HOST );
+		if ( Gatepost\WooCommerce\Tests\Support\FakeGateway::HOST === $host ) {
+			throw new LogicException( 'A test called the gateway with no FakeGateway.' );
+		}
+		return new WP_Error( 'gatepost_tests_offline', 'The tests make no network requests.' );
+	},
+	PHP_INT_MAX,
+	3
+);
+
 require getenv( 'WP_PHPUNIT__DIR' ) . '/includes/bootstrap.php';
