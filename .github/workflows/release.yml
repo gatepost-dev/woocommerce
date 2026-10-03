@@ -4,7 +4,9 @@ name: release
 
 # A version tag such as v0.1.0 builds the zip, checks it with Plugin Check, and attaches it to a
 # draft GitHub release with a provenance attestation. A person runs the same steps by hand for an
-# existing tag. Nothing here publishes the draft or sends the plugin to WordPress.org.
+# existing tag. Nothing here publishes the draft or sends the plugin to WordPress.org. The
+# tag must equal the plugin version and the stable tag of readme.txt. The jobs of ci.yml do not
+# gate this workflow, so a person checks that CI passed on the tagged commit before publishing.
 on:
   push:
     tags: ['v*']
@@ -17,14 +19,24 @@ on:
 
 permissions: {}
 
+# One release run for each tag.
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   zip:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
+      # The attestation is signed with the OIDC token of the run.
       id-token: write
+      # The attestation is stored with the repo.
       attestations: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      sha: ${{ steps.tag.outputs.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,6 +47,14 @@ jobs:
         with:
           php-version: '8.4'
           coverage: none
+      - name: Check the tag against the plugin version
+        id: tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          php scripts/check-release-tag.php "$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - run: composer install --no-interaction --no-progress
       - run: scripts/install-wp
       - run: scripts/build-zip
@@ -54,6 +74,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
+      # The job creates the draft release.
       contents: write
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -62,7 +83,14 @@ jobs:
       - name: Attach the zip to a draft release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag || github.ref_name }}
+          TAG: ${{ needs.zip.outputs.tag }}
+          BUILT_SHA: ${{ needs.zip.outputs.sha }}
         run: |
-          gh release create "$TAG" gatepost-postcode-for-woocommerce.zip \
-            --draft --verify-tag --title "$TAG" --repo "$GITHUB_REPOSITORY"
+          # The tag must still point to the commit that the zip came from.
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)"
+          if [ "$tag_sha" != "$BUILT_SHA" ]; then
+            echo "The tag $TAG moved from $BUILT_SHA to $tag_sha during the run." >&2
+            exit 1
+          fi
+          gh release create --draft --verify-tag --title "$TAG" --repo "$GITHUB_REPOSITORY" \
+            -- "$TAG" gatepost-postcode-for-woocommerce.zip

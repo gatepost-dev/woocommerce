@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 The Gatepost authors
 # SPDX-License-Identifier: Apache-2.0
 # Runs WordPress.org's Plugin Check on dist/gatepost-postcode-for-woocommerce.zip, in a new copy of
-# the WordPress in build/wp. It fails when Plugin Check reports an error (WP-5). It prints the
+# the WordPress in build/wp. It fails when Plugin Check reports an error. It prints the
 # warnings, so a person can read them. Run scripts/install-wp and scripts/build-zip first.
 set -euo pipefail
 
@@ -23,11 +23,30 @@ wp plugin install "$root/build/plugin-check.zip" "$root/dist/$slug.zip"
 wp plugin activate woocommerce plugin-check "$slug"
 
 report="$root/build/plugin-check.csv"
+# Plugin Check exits with 1 when it finds an error. Any other failure leaves no report that
+# Plugin Check wrote, and the script must not read that as a pass.
+status=0
 php -d memory_limit=1G "$root/build/wp-cli.phar" --path="$site" plugin check "$slug" \
-  --format=csv --fields=file,line,type,code,message > "$report" || true
+  --format=csv --fields=file,line,type,code,message > "$report" || status=$?
 cat "$report"
+if [ "$status" -gt 1 ]; then
+  echo "Plugin Check stopped with exit code $status." >&2
+  exit 1
+fi
+if [ ! -s "$report" ]; then
+  echo 'Plugin Check wrote no report.' >&2
+  exit 1
+fi
 if grep -q ',ERROR,' "$report"; then
   echo 'Plugin Check reports at least one error.' >&2
+  exit 1
+fi
+if [ "$status" -ne 0 ]; then
+  echo 'Plugin Check failed and its report holds no error row.' >&2
+  exit 1
+fi
+if ! grep -qE '^(file,line,type,code,message|Success: Checks complete)' "$report"; then
+  echo 'Plugin Check wrote a report that this script does not recognise.' >&2
   exit 1
 fi
 echo 'Plugin Check reports no errors.'

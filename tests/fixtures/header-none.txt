@@ -1,0 +1,5 @@
+<?php
+/**
+ * Plugin Name: Example
+ * Description: No version here.
+ */
