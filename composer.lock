@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "52dded74b3be14bb5213eb0fb97d4f08",
+    "content-hash": "7dcbf0b044f996715dbf2dcf18d4fdc1",
     "packages": [
         {
             "name": "gatepost/postcode",
@@ -45,102 +45,14 @@
                     "Gatepost\\Postcode\\": "src/"
                 }
             },
-            "autoload-dev": {
-                "psr-4": {
-                    "Gatepost\\Postcode\\Tests\\": "tests/"
-                }
-            },
-            "scripts": {
-                "api:check": [
-                    "scripts/check-api.sh"
-                ],
-                "api:dump": [
-                    "@php scripts/dump-api.php"
-                ],
-                "api:dump:check": [
-                    "@php scripts/dump-api.php --check"
-                ],
-                "changes:check": [
-                    "changie merge --dry-run | cmp - CHANGELOG.md"
-                ],
-                "check": [
-                    "@generate:check",
-                    "@context:check",
-                    "@composer validate --strict",
-                    "@composer normalize --dry-run",
-                    "@composer dump-autoload --optimize --strict-psr --no-scripts",
-                    "@cs:check",
-                    "@phpstan",
-                    "@phpmd",
-                    "@test:coverage",
-                    "@api:dump:check",
-                    "@api:check",
-                    "@changes:check",
-                    "@licences",
-                    "@deps:licences",
-                    "@secrets",
-                    "@workflows:check",
-                    "@tells"
-                ],
-                "context:check": [
-                    "cmp CONTEXT.md spec/CONTEXT.md"
-                ],
-                "contract": [
-                    "phpunit --testsuite contract"
-                ],
-                "cs": [
-                    "php-cs-fixer fix"
-                ],
-                "cs:check": [
-                    "php-cs-fixer fix --dry-run --diff"
-                ],
-                "deps:licences": [
-                    "@php scripts/check-licences.php"
-                ],
-                "generate": [
-                    "@php scripts/generate-data.php"
-                ],
-                "generate:check": [
-                    "@php scripts/generate-data.php --check"
-                ],
-                "licences": [
-                    "uvx --with charset-normalizer==3.5.2 reuse@6.2.0 lint"
-                ],
-                "mutation": [
-                    "@putenv XDEBUG_MODE=coverage",
-                    "tools/infection/vendor/bin/infection --threads=max --show-mutations=0"
-                ],
-                "phpmd": [
-                    "@php -d error_reporting=24575 vendor/bin/phpmd scripts,src,tests text phpmd.xml"
-                ],
-                "phpstan": [
-                    "phpstan analyse --no-progress"
-                ],
-                "secrets": [
-                    "gitleaks git --no-banner --redact ."
-                ],
-                "tells": [
-                    "python3 spec/scripts/check-tells"
-                ],
-                "test": [
-                    "phpunit"
-                ],
-                "test:coverage": [
-                    "@putenv XDEBUG_MODE=coverage",
-                    "phpunit --path-coverage --coverage-cobertura build/coverage/cobertura.xml",
-                    "@php scripts/check-coverage.php build/coverage/cobertura.xml"
-                ],
-                "workflows:check": [
-                    "uvx zizmor@1.30.1 --offline .github/workflows"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "Apache-2.0"
             ],
             "description": "Unofficial. Not made or endorsed by NIPOST. Read and query Nigerian postcodes.",
             "support": {
-                "source": "https://github.com/gatepost-dev/php/tree/v0.1.0-alpha.1",
-                "issues": "https://github.com/gatepost-dev/php/issues"
+                "issues": "https://github.com/gatepost-dev/php/issues",
+                "source": "https://github.com/gatepost-dev/php/tree/v0.1.0-alpha.1"
             },
             "time": "2026-10-03T14:22:43+00:00"
         },
