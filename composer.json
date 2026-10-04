@@ -21,12 +21,6 @@
         "wp-phpunit/wp-phpunit": "^7.1.1",
         "yoast/phpunit-polyfills": "^4.0.0"
     },
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "https://github.com/gatepost-dev/php"
-        }
-    ],
     "autoload": {
         "psr-4": {
             "Gatepost\\WooCommerce\\": "src/"
