@@ -1,0 +1,138 @@
+{
+    "name": "gatepost/woocommerce",
+    "description": "Unofficial. Not made or endorsed by NIPOST. Nigerian postcodes in WooCommerce.",
+    "license": "Apache-2.0",
+    "type": "wordpress-plugin",
+    "require": {
+        "php": ">=8.1",
+        "gatepost/postcode": "0.1.0-alpha.1",
+        "nyholm/psr7": "^1.8.2"
+    },
+    "require-dev": {
+        "brianhenryie/strauss": "^0.30.0",
+        "dealerdirect/phpcodesniffer-composer-installer": "^1.2.1",
+        "ergebnis/composer-normalize": "^2.54.0",
+        "php-stubs/woocommerce-stubs": "^11.1.2",
+        "phpcompatibility/phpcompatibility-wp": "^2.1.8",
+        "phpstan/phpstan": "^2.2.16",
+        "phpunit/phpunit": "^9.6.37",
+        "szepeviktor/phpstan-wordpress": "^2.0.4",
+        "wp-coding-standards/wpcs": "^3.4.1",
+        "wp-phpunit/wp-phpunit": "^7.1.1",
+        "yoast/phpunit-polyfills": "^4.0.0"
+    },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/gatepost-dev/php"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Gatepost\\WooCommerce\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Gatepost\\WooCommerce\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true,
+            "ergebnis/composer-normalize": true
+        },
+        "platform": {
+            "php": "8.1.0"
+        },
+        "sort-packages": true
+    },
+    "extra": {
+        "strauss": {
+            "classmap_prefix": "Gatepost_WooCommerce_Vendor_",
+            "constant_prefix": "GATEPOST_WC_VENDOR_",
+            "delete_vendor_packages": false,
+            "include_author": false,
+            "include_modified_date": false,
+            "include_root_autoload": true,
+            "namespace_prefix": "Gatepost\\WooCommerce\\Vendor\\",
+            "optimize_autoloader": false,
+            "packages": [
+                "gatepost/postcode",
+                "nyholm/psr7"
+            ],
+            "target_directory": "vendor-prefixed"
+        }
+    },
+    "scripts": {
+        "post-install-cmd": [
+            "@prefix"
+        ],
+        "post-update-cmd": [
+            "@prefix"
+        ],
+        "changes:check": "changie merge --dry-run | cmp - CHANGELOG.md",
+        "check": [
+            "@composer validate --strict",
+            "@composer normalize --dry-run",
+            "@context:check",
+            "@lint",
+            "@phpstan",
+            "@test:setup",
+            "@test:coverage",
+            "@test:multisite",
+            "@changes:check",
+            "@namespaces",
+            "@licences",
+            "@deps:licences",
+            "@secrets",
+            "@workflows:check",
+            "@tells"
+        ],
+        "context:check": "cmp CONTEXT.md spec/CONTEXT.md",
+        "deps:licences": [
+            "mkdir -p build",
+            "corepack pnpm licenses list --json > build/pnpm-licences.json",
+            "@php scripts/check-licences.php composer.lock NOTICE build/pnpm-licences.json"
+        ],
+        "licences": "uvx --with charset-normalizer==3.5.2 reuse@6.2.0 lint",
+        "lint": "phpcs",
+        "lint:fix": "phpcbf",
+        "namespaces": "@php scripts/check-namespaces.php",
+        "phpstan": "phpstan analyse --no-progress --memory-limit=1G",
+        "prefix": "strauss",
+        "secrets": "gitleaks git --no-banner --redact .",
+        "tells": "python3 spec/scripts/check-tells",
+        "test": "phpunit",
+        "test:coverage": [
+            "@putenv XDEBUG_MODE=coverage",
+            "phpunit --coverage-cobertura build/coverage/cobertura.xml",
+            "@php scripts/check-coverage.php build/coverage/cobertura.xml"
+        ],
+        "test:multisite": [
+            "@putenv WP_MULTISITE=1",
+            "phpunit --group ms-required"
+        ],
+        "test:setup": "scripts/install-wp",
+        "workflows:check": "uvx zizmor@1.30.1 --offline .github/workflows"
+    },
+    "scripts-descriptions": {
+        "changes:check": "Check that CHANGELOG.md matches the change files.",
+        "check": "Run every check that the CI check job runs.",
+        "context:check": "Check that CONTEXT.md matches the copy in the spec.",
+        "deps:licences": "Check that each locked package has an allowed licence (DEP-4).",
+        "licences": "Check the licence information of each file.",
+        "lint": "Run PHPCS with the WordPress rules of php.md Part B.",
+        "lint:fix": "Fix what PHPCS can fix.",
+        "namespaces": "Check that plugin code names bundled packages only with the prefix.",
+        "phpstan": "Run static analysis.",
+        "prefix": "Copy the SDK into vendor-prefixed/ under the plugin's namespace.",
+        "secrets": "Scan the git history for secrets.",
+        "tells": "Check for agent tells.",
+        "test": "Run the PHPUnit tests on the WordPress in build/wp.",
+        "test:coverage": "Run the tests with line coverage. They need Xdebug.",
+        "test:multisite": "Run the tests that need a network of sites.",
+        "test:setup": "Install WordPress and WooCommerce in build/ for the tests.",
+        "workflows:check": "Check the workflows with zizmor."
+    }
+}

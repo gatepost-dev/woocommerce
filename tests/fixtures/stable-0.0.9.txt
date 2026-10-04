@@ -1,0 +1,4 @@
+=== Example ===
+Contributors: example
+Stable tag: 0.0.9
+Tested up to: 7.1

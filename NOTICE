@@ -1,0 +1,13 @@
+Gatepost
+Copyright 2026 The Gatepost authors
+
+This product is unofficial. The Nigerian Postal Service (NIPOST) did not make it and does not endorse it.
+Gatepost uses the name NIPOST only to describe compatibility with NIPOST's National Digital Postcode.
+
+The plugin bundles gatepost/postcode (Apache-2.0) and these packages under the MIT licence: nyholm/psr7,
+psr/http-client, psr/http-factory, psr/http-message and psr/simple-cache. It also bundles the
+Composer autoloader (MIT). Each bundled package keeps its licence file in vendor-prefixed/.
+
+The bundled gatepost/postcode also holds data from the Unicode Character Database in
+vendor-prefixed/gatepost/postcode/src/Internal/NfkcTable.php. The Unicode License v3 covers it.
+The licence text is in vendor-prefixed/gatepost/postcode/LICENSES/Unicode-3.0.txt.

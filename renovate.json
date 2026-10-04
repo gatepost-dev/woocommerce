@@ -1,0 +1,47 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "Each pull request body ends with the sign-off line that the pull request job needs.",
+    "prHeader holds the line because a JSON string cannot wrap, and the template ends with it."
+  ],
+  "extends": [
+    "schedule:weekly",
+    "helpers:pinGitHubActionDigests",
+    ":gitSignOff"
+  ],
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "commitMessageTopic": "{{depName}}",
+  "customManagers": [
+    {
+      "description": "Pins of the uvx tools in the scripts of composer.json",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^composer\\.json$/"
+      ],
+      "matchStrings": [
+        "uvx (?:--with \\S+ )*(?<depName>[A-Za-z0-9][A-Za-z0-9._-]*)@(?<currentValue>[^\\s\"]+)",
+        "--with (?<depName>[A-Za-z0-9][A-Za-z0-9._-]*)==(?<currentValue>[^\\s\"]+)"
+      ],
+      "datasourceTemplate": "pypi"
+    },
+    {
+      "description": [
+        "Versions of the tools that the workflows download from GitHub releases.",
+        "A comment above each version names the repo of the tool."
+      ],
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "# renovate: depName=(?<depName>\\S+)\\s+[A-Z_]+_VERSION: (?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    }
+  ],
+  "prHeader": "Signed-off-by: renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>",
+  "prBodyTemplate": "Weekly dependency update.\n\n{{{header}}}"
+}

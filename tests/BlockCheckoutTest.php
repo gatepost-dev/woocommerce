@@ -1,0 +1,353 @@
+<?php
+/**
+ * SPDX-FileCopyrightText: 2026 The Gatepost authors
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * @package Gatepost\WooCommerce
+ */
+
+namespace Gatepost\WooCommerce\Tests;
+
+use Automattic\WooCommerce\Blocks\Domain\Services\CheckoutFields;
+use Automattic\WooCommerce\Blocks\Package;
+use Gatepost\WooCommerce\BlockCheckout;
+use Gatepost\WooCommerce\Settings;
+use Gatepost\WooCommerce\Tests\Support\FakeGateway;
+use Gatepost\WooCommerce\Tests\Support\Shop;
+use Gatepost\WooCommerce\Tests\Support\CapturedLog;
+use Gatepost\WooCommerce\Tests\Support\StoreApiCheckout;
+use RuntimeException;
+use WC_Order;
+use WP_REST_Response;
+use WP_UnitTestCase;
+
+/**
+ * The checkout block, through the Store API that it calls.
+ */
+final class BlockCheckoutTest extends WP_UnitTestCase {
+
+	public function set_up(): void {
+		parent::set_up();
+		Shop::fill_cart();
+	}
+
+	public function tear_down(): void {
+		remove_all_filters( 'pre_option_' . Settings::LEGACY );
+		delete_option( Settings::REQUIRED );
+		self::register_field_again();
+		CapturedLog::restore();
+		parent::tear_down();
+	}
+
+	/**
+	 * Registers the field again, so that it reads the required setting.
+	 */
+	private static function register_field_again(): void {
+		$fields = Package::container()->get( CheckoutFields::class );
+		$fields->deregister_checkout_field( BlockCheckout::FIELD );
+		BlockCheckout::register_field();
+	}
+
+	/**
+	 * Gives the order that a successful checkout created.
+	 *
+	 * @param WP_REST_Response $response The checkout response.
+	 */
+	private function order_of( WP_REST_Response $response ): WC_Order {
+		$this->assertSame( 200, $response->get_status(), self::text_of( $response ) );
+		$order = wc_get_order( $response->get_data()['order_id'] );
+		$this->assertInstanceOf( WC_Order::class, $order );
+		return $order;
+	}
+
+	/**
+	 * Gives the text of each note on an order.
+	 *
+	 * @param WC_Order $order The order.
+	 * @return array<int, string>
+	 */
+	private static function notes_of( WC_Order $order ): array {
+		$notes = wc_get_order_notes( array( 'order_id' => $order->get_id() ) );
+		return wp_list_pluck( $notes, 'content' );
+	}
+
+	/**
+	 * Gives the body of a response as JSON text.
+	 *
+	 * @param WP_REST_Response $response The checkout response.
+	 */
+	private static function text_of( WP_REST_Response $response ): string {
+		return (string) wp_json_encode( $response->get_data() );
+	}
+
+	public function test_saves_the_postcode_of_a_nigerian_order_in_canonical_form(): void {
+		$order = $this->order_of(
+			StoreApiCheckout::place(
+				array( 'gatepost/postcode' => 'fc 01 z99 zz 01' ),
+				array( 'gatepost/postcode' => 'FC01Z99ZZ02' )
+			)
+		);
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $order->get_meta( '_gatepost_billing_postcode' ) );
+		$this->assertSame( 'FC-01-Z99-ZZ-02', $order->get_meta( '_gatepost_shipping_postcode' ) );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $order->get_billing_postcode() );
+		$this->assertSame( 'FC-01-Z99-ZZ-02', $order->get_shipping_postcode() );
+		$this->assertSame( 'unchecked', $order->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_refuses_a_postcode_with_the_wrong_format_in_a_nigerian_address(): void {
+		$response = StoreApiCheckout::place(
+			array( 'gatepost/postcode' => 'FCO1Z99ZZ01' ),
+			array( 'gatepost/postcode' => 'FC-01-Z99-ZZ-01' )
+		);
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertStringContainsString(
+			'Part of the postcode is not valid. Did you mean FC-01-Z99-ZZ-01?',
+			self::text_of( $response )
+		);
+	}
+
+	public function test_ignores_the_field_for_an_address_outside_nigeria(): void {
+		$britain = array(
+			'country'           => 'GB',
+			'state'             => '',
+			'city'              => 'London',
+			'postcode'          => 'SW1A 1AA',
+			'gatepost/postcode' => 'not a postcode!',
+		);
+		$order   = $this->order_of( StoreApiCheckout::place( $britain, $britain ) );
+		$this->assertSame( 'SW1A 1AA', $order->get_billing_postcode() );
+		$this->assertSame( '', $order->get_meta( '_gatepost_billing_postcode' ) );
+		$this->assertSame( '', $order->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_requires_a_postcode_in_nigeria_only_when_the_store_says_so(): void {
+		update_option( Settings::REQUIRED, 'yes' );
+		self::register_field_again();
+		$response = StoreApiCheckout::place( array(), array() );
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertStringContainsString( 'Postcode is required', self::text_of( $response ) );
+
+		$britain = array(
+			'country'  => 'GB',
+			'state'    => '',
+			'postcode' => 'SW1A 1AA',
+		);
+		$this->order_of( StoreApiCheckout::place( $britain, $britain ) );
+	}
+
+	public function test_takes_a_required_postcode_from_the_block_field(): void {
+		update_option( Settings::REQUIRED, 'yes' );
+		self::register_field_again();
+		$postcode = array( 'gatepost/postcode' => 'FC-01-Z99-ZZ-01' );
+		$order    = $this->order_of( StoreApiCheckout::place( $postcode, $postcode ) );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $order->get_shipping_postcode() );
+	}
+
+	public function test_accepts_an_old_postcode_by_default(): void {
+		$old   = array( 'gatepost/postcode' => '900108' );
+		$order = $this->order_of( StoreApiCheckout::place( $old, $old ) );
+		$this->assertSame( '900108', $order->get_meta( '_gatepost_billing_postcode' ) );
+		$this->assertSame( 'unchecked', $order->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_asks_for_the_new_postcode_when_the_store_rejects_old_ones(): void {
+		update_option( Settings::LEGACY, 'reject' );
+		$old      = array( 'gatepost/postcode' => '900108' );
+		$response = StoreApiCheckout::place( $old, $old );
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertStringContainsString( 'old 6-digit postcode', self::text_of( $response ) );
+	}
+
+	public function test_marks_the_order_valid_after_one_lookup_for_a_shared_postcode(): void {
+		update_option( Settings::SECRET_KEY, 'nipost_live_example' );
+		$gateway  = ( new FakeGateway() )->start();
+		$postcode = array( 'gatepost/postcode' => 'FC 01 Z99 ZZ 01' );
+		$order    = $this->order_of( StoreApiCheckout::place( $postcode, $postcode ) );
+		$this->assertSame( 'valid', $order->get_meta( '_gatepost_postcode_check' ) );
+		$this->assertCount( 1, $gateway->requests );
+	}
+
+	public function test_places_the_order_when_the_gateway_does_not_answer(): void {
+		update_option( Settings::SECRET_KEY, 'nipost_live_example' );
+		( new FakeGateway( 'no-response' ) )->start();
+		$postcode = array( 'gatepost/postcode' => 'FC-01-Z99-ZZ-01' );
+		$order    = $this->order_of( StoreApiCheckout::place( $postcode, $postcode ) );
+		$this->assertSame( 'error', $order->get_meta( '_gatepost_postcode_check' ) );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $order->get_shipping_postcode() );
+		$this->assertContains(
+			'The billing postcode FC-01-Z99-ZZ-** was not checked. The gateway did not answer. '
+				. 'The order went ahead. Check the postcode by hand.',
+			self::notes_of( $order )
+		);
+	}
+
+	public function test_marks_the_order_invalid_and_leaves_a_note_for_an_unknown_postcode(): void {
+		update_option( Settings::SECRET_KEY, 'nipost_live_example' );
+		( new FakeGateway() )->start();
+		$order = $this->order_of(
+			StoreApiCheckout::place(
+				array( 'gatepost/postcode' => 'FC-01-Z99-ZZ-01' ),
+				array( 'gatepost/postcode' => 'FC-01-Z99-ZZ-02' )
+			)
+		);
+		$this->assertSame( 'invalid', $order->get_meta( '_gatepost_postcode_check' ) );
+		$this->assertContains(
+			'NIPOST has no record of the shipping postcode FC-01-Z99-ZZ-**. '
+				. 'Ask the customer to check it.',
+			self::notes_of( $order )
+		);
+	}
+
+	/**
+	 * Makes every read of the old-postcode setting fail.
+	 */
+	private static function break_the_settings(): void {
+		add_filter(
+			'pre_option_' . Settings::LEGACY,
+			static function () {
+				throw new RuntimeException( 'options broke' );
+			}
+		);
+	}
+
+	public function test_accepts_the_text_when_the_settings_break_at_checkout(): void {
+		self::break_the_settings();
+		$this->assertSame( 'fc 01', BlockCheckout::sanitize( 'fc 01' ) );
+		$this->assertTrue( BlockCheckout::validate( 'EKO1A03FK01' ) );
+	}
+
+	public function test_places_the_order_when_the_settings_break_after_it(): void {
+		$order = wc_create_order();
+		$order->set_billing_country( 'NG' );
+		$order->save();
+		self::break_the_settings();
+		BlockCheckout::record( $order );
+		$this->assertSame( '', $order->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_keeps_the_typed_postcode_when_the_checker_cannot_be_built(): void {
+		$log   = CapturedLog::install();
+		$order = wc_create_order();
+		$order->set_billing_country( 'NG' );
+		$order->update_meta_data( '_wc_billing/gatepost/postcode', 'FC-01-Z99-ZZ-01' );
+		$order->save();
+		self::break_the_settings();
+		BlockCheckout::record( $order );
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $saved );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $saved->get_billing_postcode() );
+		$this->assertSame( 'unchecked', $saved->get_meta( '_gatepost_postcode_check' ) );
+		$this->assertCount( 1, $log->messages );
+		$this->assertStringContainsString( 'RuntimeException', $log->messages[0] );
+	}
+
+	public function test_logs_the_class_when_the_settings_break_at_validation(): void {
+		$log = CapturedLog::install();
+		self::break_the_settings();
+		$this->assertTrue( BlockCheckout::validate( 'EKO1A03FK01' ) );
+		$this->assertSame(
+			array(
+				'The plugin could not check the format of a postcode.'
+					. ' It failed with RuntimeException.',
+			),
+			$log->messages
+		);
+	}
+
+	/**
+	 * Gives an address in Britain.
+	 *
+	 * @return array<string, string>
+	 */
+	private static function british(): array {
+		return array(
+			'country'  => 'GB',
+			'state'    => '',
+			'city'     => 'London',
+			'postcode' => 'SW1A 1AA',
+		);
+	}
+
+	public function test_requires_the_postcode_of_each_nigerian_address_in_a_mixed_order(): void {
+		update_option( Settings::REQUIRED, 'yes' );
+		self::register_field_again();
+		$typed = array( 'gatepost/postcode' => 'FC-01-Z99-ZZ-01' );
+
+		$response = StoreApiCheckout::place( array(), self::british() );
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertStringContainsString( 'Postcode is required', self::text_of( $response ) );
+		$response = StoreApiCheckout::place( self::british(), array() );
+		$this->assertSame( 400, $response->get_status() );
+		$this->assertStringContainsString( 'Postcode is required', self::text_of( $response ) );
+
+		Shop::fill_cart();
+		$order = $this->order_of( StoreApiCheckout::place( $typed, self::british() ) );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $order->get_meta( '_gatepost_billing_postcode' ) );
+		$this->assertSame( '', $order->get_meta( '_gatepost_shipping_postcode' ) );
+		$this->assertSame( 'SW1A 1AA', $order->get_shipping_postcode() );
+		Shop::fill_cart();
+		$order = $this->order_of( StoreApiCheckout::place( self::british(), $typed ) );
+		$this->assertSame( '', $order->get_meta( '_gatepost_billing_postcode' ) );
+		$this->assertSame( 'FC-01-Z99-ZZ-01', $order->get_meta( '_gatepost_shipping_postcode' ) );
+	}
+
+	/**
+	 * Gives the meta keys that a saved order holds.
+	 *
+	 * @param WC_Order $order The order.
+	 * @return array<int, string>
+	 */
+	private static function meta_keys( WC_Order $order ): array {
+		$fresh = wc_get_order( $order->get_id() );
+		self::assertInstanceOf( WC_Order::class, $fresh );
+		$keys = array();
+		foreach ( $fresh->get_meta_data() as $meta ) {
+			$keys[] = (string) $meta->key;
+		}
+		return $keys;
+	}
+
+	public function test_leaves_no_postcode_rows_on_an_order_outside_nigeria(): void {
+		$britain = self::british() + array( 'gatepost/postcode' => 'FC-01-Z99-ZZ-01' );
+		$order   = $this->order_of( StoreApiCheckout::place( $britain, $britain ) );
+		$keys    = self::meta_keys( $order );
+		$this->assertNotContains( '_wc_billing/gatepost/postcode', $keys );
+		$this->assertNotContains( '_wc_shipping/gatepost/postcode', $keys );
+		$this->assertNotContains( '_gatepost_billing_postcode', $keys );
+	}
+
+	public function test_does_not_look_up_again_when_a_payment_retry_reuses_the_order(): void {
+		update_option( Settings::SECRET_KEY, 'nipost_live_example' );
+		$gateway  = ( new FakeGateway() )->start();
+		$postcode = array( 'gatepost/postcode' => 'FC-01-Z99-ZZ-02' );
+		$order    = $this->order_of( StoreApiCheckout::place( $postcode, $postcode ) );
+		$notes    = self::notes_of( $order );
+		$this->assertCount( 1, $gateway->requests );
+		BlockCheckout::record( $order );
+		do_action( 'woocommerce_store_api_checkout_order_processed', $order );
+		$saved = wc_get_order( $order->get_id() );
+		$this->assertInstanceOf( WC_Order::class, $saved );
+		$this->assertCount( 1, $gateway->requests );
+		$this->assertSame( $notes, self::notes_of( $saved ) );
+		$this->assertSame( 'invalid', $saved->get_meta( '_gatepost_postcode_check' ) );
+	}
+
+	public function test_does_not_read_the_secret_key_for_an_order_outside_nigeria(): void {
+		update_option( Settings::SECRET_KEY, 'nipost_live_example' );
+		$reads = 0;
+		add_filter(
+			'pre_option_' . Settings::SECRET_KEY,
+			static function ( $value ) use ( &$reads ) {
+				++$reads;
+				return $value;
+			}
+		);
+		$this->order_of( StoreApiCheckout::place( self::british(), self::british() ) );
+		$this->assertSame( 0, $reads );
+	}
+
+	public function test_ignores_a_hook_call_that_does_not_hold_an_order(): void {
+		BlockCheckout::record( 12 );
+		$this->assertTrue( true );
+	}
+}

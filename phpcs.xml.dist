@@ -1,0 +1,89 @@
+<?xml version="1.0"?>
+<!--
+SPDX-FileCopyrightText: 2026 The Gatepost authors
+SPDX-License-Identifier: Apache-2.0
+-->
+<ruleset name="Gatepost WooCommerce">
+	<description>The plugin rules of spec/standards/languages/php.md, Part B.</description>
+
+	<file>gatepost-postcode-for-woocommerce.php</file>
+	<file>uninstall.php</file>
+	<file>src</file>
+	<file>scripts</file>
+	<file>tests</file>
+
+	<arg name="extensions" value="php"/>
+	<arg name="colors"/>
+	<arg value="sp"/>
+
+	<rule ref="WordPress-Extra"/>
+	<rule ref="WordPress-Docs"/>
+
+	<rule ref="PHPCompatibilityWP"/>
+	<config name="testVersion" value="8.1-"/>
+	<config name="minimum_wp_version" value="6.7"/>
+
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array">
+				<element value="gatepost-postcode-for-woocommerce"/>
+			</property>
+		</properties>
+	</rule>
+
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array">
+				<element value="gatepost"/>
+				<element value="Gatepost\WooCommerce"/>
+			</property>
+		</properties>
+	</rule>
+
+	<!-- TELL-1 and TELL-2: line length 100, nesting 3, cyclomatic complexity 10. -->
+	<rule ref="Generic.Files.LineLength">
+		<properties>
+			<property name="lineLimit" value="100"/>
+			<property name="absoluteLineLimit" value="100"/>
+		</properties>
+	</rule>
+	<rule ref="Generic.Metrics.NestingLevel">
+		<properties>
+			<property name="nestingLevel" value="3"/>
+			<property name="absoluteNestingLevel" value="3"/>
+		</properties>
+	</rule>
+	<rule ref="Generic.Metrics.CyclomaticComplexity">
+		<properties>
+			<property name="complexity" value="10"/>
+			<property name="absoluteComplexity" value="10"/>
+		</properties>
+	</rule>
+
+	<!-- The classes in src/ follow PSR-4, as WooCommerce's own src/ does, so their file names
+	     follow the class names. -->
+	<rule ref="WordPress.Files.FileName">
+		<exclude-pattern>/src/</exclude-pattern>
+		<exclude-pattern>/tests/</exclude-pattern>
+	</rule>
+
+	<!-- A test name states the behaviour (T-6), so a doc comment would repeat it (TELL-5). -->
+	<rule ref="Squiz.Commenting.FunctionComment.Missing">
+		<exclude-pattern>/tests/</exclude-pattern>
+	</rule>
+	<!-- The tests fire WordPress's and WooCommerce's own hooks, and set their constants and
+	     globals. -->
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<exclude-pattern>/tests/</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.NamingConventions.ValidHookName">
+		<exclude-pattern>/tests/</exclude-pattern>
+	</rule>
+	<!-- The scripts run on the command line, outside WordPress. -->
+	<rule ref="WordPress.WP.AlternativeFunctions">
+		<exclude-pattern>/scripts/</exclude-pattern>
+	</rule>
+	<rule ref="WordPress.Security.EscapeOutput">
+		<exclude-pattern>/scripts/</exclude-pattern>
+	</rule>
+</ruleset>

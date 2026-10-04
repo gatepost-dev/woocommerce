@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2026 The Gatepost authors
+# SPDX-License-Identifier: Apache-2.0
+/build/
+/dist/
+/node_modules/
+/test-results/
+/playwright-report/
+/vendor/
+/vendor-prefixed/

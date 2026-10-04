@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 The Gatepost authors
+# SPDX-License-Identifier: Apache-2.0
+# Installs WordPress, WooCommerce and WP-CLI in build/ for the tests, with no Docker. The database
+# is SQLite through WordPress's own drop-in, or MySQL when GATEPOST_DB is mysql. Each download has
+# a SHA-256 sum below, so a new version fails until a person adds its sum. A second run with the
+# same versions downloads nothing.
+set -euo pipefail
+
+wp_version="${GATEPOST_WP_VERSION:-7.1.2}"
+wc_version="${GATEPOST_WC_VERSION:-11.1.2}"
+db="${GATEPOST_DB:-sqlite}"
+sqlite_version='3.0.2'
+wp_cli_version='2.12.0'
+plugin_check_version='2.1.0'
+
+sum_of() {
+  case "$1" in
+    wordpress-7.1.2.zip) echo 8fc96c59a78b7219e4a130222b7fadb51b03e503e8b0123beaa7e28961c21ce2 ;;
+    wordpress-6.7.9.zip) echo cd20d2c331d4196d6bc55f1ceeeee9ba0428d57aedeecdef4b6213f2c80a4e56 ;;
+    woocommerce.11.1.2.zip) echo 9de9350a1cf5671b9960afb3151f40f7980e223217a441bf2ea5921b5fce8e9e ;;
+    woocommerce.10.0.4.zip) echo 002b3cb8b1fcacf9836367a1ae617c87d6def0c33d16b8a79a4f81dad9894429 ;;
+    sqlite-database-integration.3.0.2.zip)
+      echo 1602e75577ad9b3a7e3e4a6a44a81b9541cdee2124d48928faf61c6fd3cd4f74 ;;
+    plugin-check.2.1.0.zip) echo 6ff4bd2145f3befcf907df158cc466b1649dafed5686de8369907403c3013fc4 ;;
+    wp-cli-2.12.0.phar) echo ce34ddd838f7351d6759068d09793f26755463b4a4610a5a5c0a97b68220d85c ;;
+    *) echo "No SHA-256 sum for $1. Add one to scripts/install-wp." >&2; exit 1 ;;
+  esac
+}
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+build="$root/build"
+downloads="$build/downloads"
+site="$build/wp-$wp_version-wc-$wc_version-$db"
+mkdir -p "$downloads"
+
+fetch() {
+  local name="$1" url="$2" sum
+  sum="$(sum_of "$name")"
+  if [ ! -f "$downloads/$name" ]; then
+    curl -sSfL -o "$downloads/$name.part" "$url"
+    mv "$downloads/$name.part" "$downloads/$name"
+  fi
+  if ! echo "$sum  $downloads/$name" | shasum -a 256 -c - > /dev/null; then
+    echo "The SHA-256 sum of $name does not match. Delete it and check the release." >&2
+    exit 1
+  fi
+}
+
+fetch "wordpress-$wp_version.zip" "https://wordpress.org/wordpress-$wp_version.zip"
+fetch "woocommerce.$wc_version.zip" "https://downloads.wordpress.org/plugin/woocommerce.$wc_version.zip"
+fetch "sqlite-database-integration.$sqlite_version.zip" \
+  "https://downloads.wordpress.org/plugin/sqlite-database-integration.$sqlite_version.zip"
+fetch "plugin-check.$plugin_check_version.zip" \
+  "https://downloads.wordpress.org/plugin/plugin-check.$plugin_check_version.zip"
+fetch "wp-cli-$wp_cli_version.phar" \
+  "https://github.com/wp-cli/wp-cli/releases/download/v$wp_cli_version/wp-cli-$wp_cli_version.phar"
+
+if [ ! -d "$site" ]; then
+  rm -rf "$site.part"
+  mkdir -p "$site.part"
+  unzip -q "$downloads/wordpress-$wp_version.zip" -d "$site.part"
+  unzip -q "$downloads/woocommerce.$wc_version.zip" -d "$site.part/wordpress/wp-content/plugins"
+  if [ "$db" = sqlite ]; then
+    unzip -q "$downloads/sqlite-database-integration.$sqlite_version.zip" \
+      -d "$site.part/wordpress/wp-content/plugins"
+    cp "$site.part/wordpress/wp-content/plugins/sqlite-database-integration/db.copy" \
+      "$site.part/wordpress/wp-content/db.php"
+  fi
+  mv "$site.part" "$site"
+fi
+ln -sfn "$site/wordpress" "$build/wp"
+ln -sfn "$root" "$build/wp/wp-content/plugins/gatepost-postcode-for-woocommerce"
+ln -sfn "$downloads/wp-cli-$wp_cli_version.phar" "$build/wp-cli.phar"
+ln -sfn "$downloads/plugin-check.$plugin_check_version.zip" "$build/plugin-check.zip"
+echo "WordPress $wp_version with WooCommerce $wc_version on $db is in build/wp."
