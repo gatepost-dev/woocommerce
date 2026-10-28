@@ -1,5 +1,5 @@
 === Gatepost Postcode for WooCommerce ===
-Contributors: gatepostdev
+Contributors: aidelojejoshua
 Tags: postcode, nigeria, checkout, address, validation
 Requires at least: 6.7
 Tested up to: 7.1
