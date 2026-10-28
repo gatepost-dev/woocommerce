@@ -45,9 +45,11 @@ A customer with a Nigerian address sees a Postcode field in both checkouts. The 
 
 ## Install
 
-> The plugin has no release yet, and it is not on WordPress.org. There is no zip to download today.
+> The first release is [v0.1.0 on GitHub](https://github.com/gatepost-dev/woocommerce/releases/tag/v0.1.0). WordPress.org reviews the plugin now, so the plugin directory does not list it yet.
 
-To try it now, run `composer install` and `scripts/build-zip` in a clone. The script writes `dist/gatepost-postcode-for-woocommerce.zip`. Then, in WordPress, go to Plugins > Add New Plugin > Upload Plugin, and upload the zip.
+Download `gatepost-postcode-for-woocommerce.zip` from the release. Do not use the source archive that GitHub offers. It does not hold the bundled SDK, so the plugin cannot start. Then, in WordPress, go to Plugins > Add New Plugin > Upload Plugin, and upload the zip.
+
+To build the zip yourself, run `composer install` and `scripts/build-zip` in a clone. The script writes `dist/gatepost-postcode-for-woocommerce.zip`.
 
 ## Set up
 
